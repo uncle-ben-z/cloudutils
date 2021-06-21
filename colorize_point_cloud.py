@@ -1,5 +1,6 @@
+import os
 import cv2
-import time
+import argparse
 import numpy as np
 import open3d as o3d
 from tqdm import tqdm
@@ -96,25 +97,7 @@ def colorize_point(i, p, n, scene, colors):
     # get color
     colors[i] = set_color(argmax)
 
-    # store intermediate result
-    if i % 10000 == 0:
-        pcd = o3d.io.read_point_cloud(pcd_path)
 
-        tmp = dict(colors)
-
-        for k in tmp.keys():
-            np.asarray(pcd.colors)[[k], :] = tmp[k]
-
-        vis = o3d.visualization.Visualizer()
-        vis.create_window()
-        vis.add_geometry(pcd)
-        ctr = vis.get_view_control()
-        ctr.rotate(0, -490.0)
-        ctr.rotate(-200, 0)
-        ctr.set_zoom(0.45)
-        img = np.array(vis.capture_screen_float_buffer(True))
-        img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
-        cv2.imwrite(f"./images/an_image_{i}.png", np.uint8(img * 255))
 
 
 def colorize_point_cloud(pcd_path, xml_path, img_list, result_path="./result_cloud.pcd"):
@@ -130,6 +113,27 @@ def colorize_point_cloud(pcd_path, xml_path, img_list, result_path="./result_clo
     # loop over all points
     for i in tqdm(range(len(pcd.points))):
         colorize_point(i, np.array(pcd.points[i]), np.array(pcd.normals[i]), scene, colors)
+
+        # store intermediate result
+        if i % 10000 == 0:
+            pcd = o3d.io.read_point_cloud(pcd_path)
+
+            tmp = dict(colors)
+
+            for k in tmp.keys():
+                np.asarray(pcd.colors)[[k], :] = tmp[k]
+
+            vis = o3d.visualization.Visualizer()
+            vis.create_window()
+            vis.add_geometry(pcd)
+            ctr = vis.get_view_control()
+            ctr.rotate(0, -490.0)
+            ctr.rotate(-200, 0)
+            ctr.set_zoom(0.45)
+            img = np.array(vis.capture_screen_float_buffer(True))
+            img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
+            cv2.imwrite(f"./images/an_image_{i}.png", np.uint8(img * 255))
+
 
     # paint point cloud
     colors = dict(colors)
@@ -148,18 +152,21 @@ def colorize_point_cloud(pcd_path, xml_path, img_list, result_path="./result_clo
 
 
 if __name__ == "__main__":
-    # paths
-    pcd_path = "/media/******/9812080e-2b1a-498a-81e8-99b092601af4/data/referenzobjekte/maintalbruecke/points/crack_0_03M.pcd"
-    xml_path = "/media/******/9812080e-2b1a-498a-81e8-99b092601af4/data/referenzobjekte/maintalbruecke/points/cameras_all.xml"
-    img_list = [
-        "/media/******/9812080e-2b1a-498a-81e8-99b092601af4/data/referenzobjekte/maintalbruecke/Christian/VSued_Abplatzung_20210428/1_crack",
-        "/media/******/9812080e-2b1a-498a-81e8-99b092601af4/data/referenzobjekte/maintalbruecke/Christian/VSued_Abplatzung_20210428/2_spall",
-        "/media/******/9812080e-2b1a-498a-81e8-99b092601af4/data/referenzobjekte/maintalbruecke/Christian/VSued_Abplatzung_20210428/3_corr",
-        "/media/******/9812080e-2b1a-498a-81e8-99b092601af4/data/referenzobjekte/maintalbruecke/Christian/VSued_Abplatzung_20210428/4_effl",
-        "/media/******/9812080e-2b1a-498a-81e8-99b092601af4/data/referenzobjekte/maintalbruecke/Christian/VSued_Abplatzung_20210428/5_vege",
-        "/media/******/9812080e-2b1a-498a-81e8-99b092601af4/data/referenzobjekte/maintalbruecke/Christian/VSued_Abplatzung_20210428/6_cp",
-        "/media/******/9812080e-2b1a-498a-81e8-99b092601af4/data/referenzobjekte/maintalbruecke/Christian/VSued_Abplatzung_20210428/8_background",
-        "/media/******/9812080e-2b1a-498a-81e8-99b092601af4/data/referenzobjekte/maintalbruecke/Christian/VSued_Abplatzung_20210428/9_mask",
-    ]
+    parser = argparse.ArgumentParser(
+        description='Colorize a point cloud based on class probabilities from multiple views.')
+    parser.add_argument('pcd_path', type=str, nargs=1,
+                        help='point cloud to be colorized')
+    parser.add_argument('xml_path', type=str, nargs=1,
+                        help='agisoft xml for camera properties')
+    parser.add_argument('img_list', type=str, nargs='+',
+                        help='list of all folders hosting images for a class')
+    parser.add_argument('--result_path', type=str, nargs=1, default="result_cloud.pcd",
+                        help='path to resulting point cloud')
+    args = parser.parse_args()
 
-    pcd = colorize_point_cloud(pcd_path, xml_path, img_list, result_path="./result_cloud.pcd")
+    # check for file existence
+    if os.path.exists(args.result_path[0]):
+        raise RuntimeError(f"File already exists: {args.result_path[0]}")
+
+    # run colorization
+    pcd = colorize_point_cloud(args.pcd_path[0], args.xml_path[0], args.img_list, args.result_path[0])
