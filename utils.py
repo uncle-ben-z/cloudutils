@@ -31,6 +31,7 @@ def create_graph(pcd):
 
 
 def simplify_graph(G):
+    """ Removes intermediate nodes with only two neighbors. """
     deg = G.degree(G.nodes)
     end_nodes = np.array([elem for elem in deg if elem[1] == 1])
     inter_nodes = np.array([elem for elem in deg if elem[1] > 2])
@@ -96,3 +97,22 @@ def remove_duplicates(pcd):
     pcd_red.normals = o3d.utility.Vector3dVector(np.array(pcd.normals)[idxs, :])
 
     return pcd_red
+
+
+def draw_lines(G):
+    """ Draws the nodes and edges of a graph as open3d lines. """
+    # map node ids to integers
+    mapping = dict(zip(G.nodes, range(len(G.nodes))))
+    G = nx.relabel_nodes(G, mapping)
+
+    # determine points and colors
+    points = np.array(list(nx.get_node_attributes(G, 'pos').values()))
+    colors = [[1, 0, 0] for i in range(len(G.nodes))]
+
+    # create line set
+    line_set = o3d.geometry.LineSet()
+    line_set.points = o3d.utility.Vector3dVector(points)
+    line_set.lines = o3d.utility.Vector2iVector(G.edges)
+    line_set.colors = o3d.utility.Vector3dVector(colors)
+
+    o3d.visualization.draw_geometries([line_set])
