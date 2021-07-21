@@ -8,6 +8,7 @@ def create_graph(pcd):
     """ Create connected graph from point cloud. """
     # compute all pairwise distances (upper triangle)
     points = np.array(pcd.points)
+    normals = np.array(pcd.normals)
     dist = cdist(points, points)
     dist = np.triu(dist, k=0)
     dist[dist == 0] = np.inf
@@ -15,7 +16,7 @@ def create_graph(pcd):
     # create nodes
     G = nx.Graph()
     for i, pt in enumerate(points):
-        G.add_node(i, pos=points[i, ...])
+        G.add_node(i, pos=points[i, ...], normal=normals[i, ...])
 
     # connect until graph is completely connected
     while not nx.is_connected(G):
@@ -26,6 +27,60 @@ def create_graph(pcd):
             length = np.sqrt(np.sum(np.power(G.nodes[src]["pos"] - G.nodes[tar]["pos"], 2)))
             G.add_edge(src, tar, weight=length)
 
+    return G
+
+
+def simplify_graph(G):
+    deg = G.degree(G.nodes)
+    end_nodes = np.array([elem for elem in deg if elem[1] == 1])
+    inter_nodes = np.array([elem for elem in deg if elem[1] > 2])
+    inter_and_end_nodes = np.array([elem for elem in deg if elem[1] != 2])
+
+    GG = nx.Graph(G.subgraph(inter_and_end_nodes[:, 0]))
+
+    # furcations absent
+    if len(inter_nodes) == 0:
+        path = nx.shortest_path(G, end_nodes[0, 0], end_nodes[-1, 0])
+        points = [G.nodes[elem]['pos'] for elem in path]
+        normals = [G.nodes[elem]['normal'] for elem in path]
+        GG.add_edge(path[0], path[-1], points=points, normals=normals)
+
+    # furcations present: loop over inter nodes
+    for source in inter_nodes:
+        source = source[0]
+
+        # case: inter node to end node
+        for target in end_nodes:
+            target = target[0]
+            path = nx.shortest_path(G, source, target)
+
+            # if only exactly this inter node in path, add path
+            if np.sum(np.isin(inter_nodes[:, 0], path)) == 1:
+                points = [G.nodes[elem]['pos'] for elem in path]
+                normals = [G.nodes[elem]['normal'] for elem in path]
+                GG.add_edge(path[0], path[-1], points=points, normals=normals)
+
+        # case: inter node to inter node
+        for target in inter_nodes:
+            target = target[0]
+            path = nx.shortest_path(G, source, target)
+
+            # if only exactly these two inter node in path, add path
+            if np.sum(np.isin(inter_nodes[:, 0], path)) == 2:
+                points = [G.nodes[elem]['pos'] for elem in path]
+                normals = [G.nodes[elem]['normal'] for elem in path]
+                GG.add_edge(path[0], path[-1], points=points, normals=normals)
+
+    return GG
+
+
+def uniquify_graph_nodes(G):
+    """ Converts node IDs into unique (position-based) IDs. """
+    name_mapping = dict()
+    for node in G.nodes:
+        name_mapping[node] = "_".join(G.nodes[node]["pos"].astype(str))
+
+    G = nx.relabel_nodes(G, name_mapping)
     return G
 
 

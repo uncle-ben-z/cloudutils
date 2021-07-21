@@ -1,15 +1,15 @@
 import numpy as np
 import open3d as o3d
 import networkx as nx
-import matplotlib.pyplot as plt
-import mpl_toolkits.mplot3d as m3d
-from utils import create_graph, remove_duplicates
+from tqdm import tqdm
+from utils import remove_duplicates, create_graph, simplify_graph, uniquify_graph_nodes
+
 
 # load point cloud
-pcd = o3d.io.read_point_cloud("crack_1_4M_colorized.pcd")  # "/home/******/Desktop/crack_branched.pcd")
+pcd = o3d.io.read_point_cloud("path")
 
 # filter point cloud for cracks
-idxs = np.array(np.nonzero(np.array(pcd.colors)[:, 0] > 0.89)[0])
+idxs = np.array(np.nonzero(np.array(pcd.colors)[:, 1] < 0.2)[0])
 pcd = pcd.select_by_index(idxs)
 
 # find clusters
@@ -26,8 +26,10 @@ o3d.visualization.draw_geometries([pcd])
 
 lines = []
 
+G_complete = nx.Graph()
+
 # loop over components
-for k, lab in enumerate(uni):
+for k, lab in enumerate(tqdm(uni)):
     pcd_select = pcd.select_by_index(np.nonzero(labels == lab)[0])
     try:
         box_max_extend = np.max(pcd_select.get_oriented_bounding_box().extent)
@@ -35,11 +37,11 @@ for k, lab in enumerate(uni):
         continue
     print("Cluster: ", lab, count[k], box_max_extend)
 
-    if box_max_extend < 0.02:
+    if box_max_extend < 0.02 or box_max_extend > 0.3:
         continue
 
     # iteratively contract
-    for radius in np.arange(0.001, 0.002, 0.0001):
+    for radius in tqdm(np.arange(0.001, 0.005, 0.0002)):
         kdtree = o3d.geometry.KDTreeFlann(pcd_select)
         tmp = [pcd_select.points[0], pcd_select.points[0]]
 
@@ -50,6 +52,8 @@ for k, lab in enumerate(uni):
 
     # remove duplicate points
     pcd_select = remove_duplicates(pcd_select)
+
+    #o3d.io.write_point_cloud("../width-estimation/points_tmp.pcd", pcd_select)
 
     # create connected graph from point cloud
     G = create_graph(pcd_select)
@@ -63,48 +67,19 @@ for k, lab in enumerate(uni):
 
     lines.append(line_set)
 
-    # TODO: project point for width measurement
-
-
     # simplify graph
-    deg = G.degree(G.nodes)
-    inter_and_end_nodes = np.array([elem for elem in deg if elem[1] != 2])
-    end_nodes = np.array([elem for elem in deg if elem[1] == 1])
-    inter_nodes = np.array([elem for elem in deg if elem[1] > 2])
+    GG  = simplify_graph(G)
 
-    GG = nx.Graph(G.subgraph(inter_and_end_nodes[:, 0]))
+    GG = uniquify_graph_nodes(GG)
 
-    # no furcations
-    if len(inter_nodes) == 0:
-        path = nx.shortest_path(G, end_nodes[0, 0], end_nodes[-1, 0])
-        pts = [G.nodes[elem]['pos'] for elem in path]
-        GG.add_edge(path[0], path[-1], pts=pts)
+    G_complete = nx.compose(G_complete, GG)
 
-    # loop over inter nodes
-    for source in inter_nodes:
-        source = source[0]
 
-        # case: inter node to end node
-        for target in end_nodes:
-            target = target[0]
-            path = nx.shortest_path(G, source, target)
 
-            # if only exactly this inter node in path, add path
-            if np.sum(np.isin(inter_nodes[:, 0], path)) == 1:
-                pts = [G.nodes[elem]['pos'] for elem in path]
-                GG.add_edge(path[0], path[-1], pts=pts)
+nx.write_gpickle(G_complete, f"graphs/graph_complete.pickle")
 
-        # case: inter node to inter node
-        for target in inter_nodes:
-            target = target[0]
-            path = nx.shortest_path(G, source, target)
 
-            # if only exactly these two inter node in path, add path
-            if np.sum(np.isin(inter_nodes[:, 0], path)) == 2:
-                pts = [G.nodes[elem]['pos'] for elem in path]
-                GG.add_edge(path[0], path[-1], pts=pts)
-
-pcd = o3d.io.read_point_cloud(
-    "/media/******/9812080e-2b1a-498a-81e8-99b092601af4/data/referenzobjekte/maintalbruecke/points/crack_1_4M.pcd")
-lines.append(pcd)
 o3d.visualization.draw_geometries(lines)
+
+
+
