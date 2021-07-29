@@ -26,13 +26,13 @@ def compute_weight(distances, angles, uv_mask):
     return weight
 
 
-def colorize_point_cloud(pcd_path, xml_path, img_list, result_path="./result_cloud.pcd"):
+def colorize_point_cloud(pcd_path, xml_path, path_list, result_path="./result_cloud.pcd"):
     """ Paint points of point cloud. """
     # load and prepare
     pcd = o3d.io.read_point_cloud(pcd_path)
     scene = Scene.from_xml(xml_path)
     scene.prepare_matrices()
-    scene.load_images(path_list=None, npy_path="images.npy", scale=0.5)
+    scene.load_images(path_list=path_list, npy_path="images.npy", scale=0.5)
 
     colors = dict()
 
@@ -52,13 +52,16 @@ def colorize_point_cloud(pcd_path, xml_path, img_list, result_path="./result_clo
         # determine argmax
         probs = intensities[..., :-1] * weight
         probs_acc = np.sum(probs, axis=0)
-        argmax = np.argmax(probs_acc)
+        if any(np.isnan(probs_acc)):
+            argmax = 6
+        else:
+            argmax = np.argmax(probs_acc)
 
         # get color
         colors[i] = set_color(argmax)
 
         # store intermediate result
-        if i % 10000 == 0:
+        if False and i % 10000 == 0:
             pcd = o3d.io.read_point_cloud(pcd_path)
 
             tmp = dict(colors)
