@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 import os
 import cv2
+import laspy
 import argparse
 import numpy as np
 import open3d as o3d
@@ -24,6 +25,16 @@ def compute_weight(distances, angles, uv_mask):
     weight /= weight.sum()
     weight = weight.reshape(-1, 1)
     return weight
+
+
+def cloud2las(cloud, filepath):
+    las = laspy.create(file_version="1.2", point_format=3) # TODO what is version and point format?
+    las.x = np.array(cloud.points.x)
+    las.y = np.array(cloud.points.y)
+    las.z = np.array(cloud.points.z)
+    las.classification = np.array(cloud.points['class'])
+    las.write(filepath)
+    return
 
 
 def colorize_point_cloud(pcd_path, xml_path, path_list, result_path="./result_cloud.pcd"):
