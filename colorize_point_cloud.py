@@ -4,8 +4,10 @@ import cv2
 import laspy
 import argparse
 import numpy as np
+import pandas as pd
 import open3d as o3d
 from tqdm import tqdm
+from pyntcloud import PyntCloud
 from projection.scene import Scene
 from matplotlib import pyplot as plt
 from multiprocessing import Pool, Manager
@@ -28,29 +30,48 @@ def compute_weight(distances, angles, uv_mask):
 
 
 def cloud2las(cloud, filepath):
-    las = laspy.create(file_version="1.2", point_format=3) # TODO what is version and point format?
+    """ Converts ply point cloud into las (including class information). """
+    las = laspy.create(file_version="1.2", point_format=2)
+    las.header.scales = np.array([1e-05, 1e-05, 1e-05])
     las.x = np.array(cloud.points.x)
     las.y = np.array(cloud.points.y)
     las.z = np.array(cloud.points.z)
-    las.classification = np.array(cloud.points['class'])
+    las.red = np.array(cloud.points.red)
+    las.green = np.array(cloud.points.green)
+    las.blue = np.array(cloud.points.blue)
+    las.classification = np.array(cloud.points['defect'])
     las.write(filepath)
+
     return
 
 
-def colorize_point_cloud(pcd_path, xml_path, path_list, result_path="./result_cloud.pcd"):
+def colorize_point_cloud(ply_path, xml_path, path_list, result_path="./result_cloud.pcd"):
     """ Paint points of point cloud. """
     # load and prepare
-    pcd = o3d.io.read_point_cloud(pcd_path)
+    ply = PyntCloud.from_file(ply_path)
     scene = Scene.from_xml(xml_path)
     scene.prepare_matrices()
     scene.load_images(path_list=path_list, npy_path="images.npy", scale=0.5)
 
-    colors = dict()
+    # container for results
+    defects = np.zeros((len(ply.points)), np.ubyte)
+    confidences = np.zeros((len(ply.points)))
+
+    crack = np.zeros((len(ply.points)))
+    spall = np.zeros((len(ply.points)))
+    corr = np.zeros((len(ply.points)))
+    effl = np.zeros((len(ply.points)))
+    vege = np.zeros((len(ply.points)))
+    cp = np.zeros((len(ply.points)))
+    back = np.zeros((len(ply.points)))
+
+    values = ply.points.values
 
     # loop over all points
-    for i in tqdm(range(len(pcd.points))):
+    for i in tqdm(range(len(values))):
 
-        uv, uv_mask, distances, angles = scene.point2uvs(np.array(pcd.points[i]), np.array(pcd.normals[i]))
+        point = values[i]
+        uv, uv_mask, distances, angles = scene.point2uvs(point[:3], point[3:6])
 
         weight = compute_weight(distances, angles, uv_mask)
 
@@ -62,50 +83,49 @@ def colorize_point_cloud(pcd_path, xml_path, path_list, result_path="./result_cl
 
         # determine argmax
         probs = intensities[..., :-1] * weight
-        probs_acc = np.sum(probs, axis=0)
+        probs_acc = np.sum(probs, axis=0) / 255
+
+        # reverse (for VR)
+        probs_acc = probs_acc[::-1]
+
         if any(np.isnan(probs_acc)):
-            argmax = 6
+            argmax = 0
         else:
             argmax = np.argmax(probs_acc)
+            confidences[i] = np.diff(np.sort(probs_acc)[-2:])
+            crack[i] = probs_acc[6]
+            spall[i] = probs_acc[5]
+            corr[i] = probs_acc[4]
+            effl[i] = probs_acc[3]
+            vege[i] = probs_acc[2]
+            cp[i] = probs_acc[1]
+            back[i] = probs_acc[0]
 
-        # get color
-        colors[i] = set_color(argmax)
+        defects[i] = argmax
 
-        # store intermediate result
-        if False and i % 10000 == 0:
-            pcd = o3d.io.read_point_cloud(pcd_path)
-
-            tmp = dict(colors)
-
-            for k in tmp.keys():
-                np.asarray(pcd.colors)[[k], :] = tmp[k]
-
-            vis = o3d.visualization.Visualizer()
-            vis.create_window()
-            vis.add_geometry(pcd)
-            ctr = vis.get_view_control()
-            ctr.rotate(0, -490.0)
-            ctr.rotate(-200, 0)
-            ctr.set_zoom(0.45)
-            img = np.array(vis.capture_screen_float_buffer(True))
-            img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
-            cv2.imwrite(f"./images/an_image_{i}.png", np.uint8(img * 255))
-
-    # paint point cloud
-    colors = dict(colors)
-    for k in colors.keys():
-        np.asarray(pcd.colors)[[k], :] = colors[k]
+    # set properties
+    ply.points["defect"] = pd.Series(defects, dtype=np.ubyte)
+    ply.points["confidence"] = pd.Series(confidences)
+    ply.points["background"] = pd.Series(back)
+    ply.points["control_point"] = pd.Series(cp)
+    ply.points["vegetation"] = pd.Series(vege)
+    ply.points["efflorescence"] = pd.Series(effl)
+    ply.points["corrosion"] = pd.Series(corr)
+    ply.points["spalling"] = pd.Series(spall)
+    ply.points["crack"] = pd.Series(crack)
 
     # store point cloud
     print(result_path)
-    o3d.io.write_point_cloud(result_path, pcd)
+    ply.to_file(result_path)
 
     # visualize point cloud
-    view_origins = np.array([view.world_origin for view in scene.views])
-    views = create_point_cloud(view_origins)
-    o3d.visualization.draw_geometries([pcd, views])
+    if False:
+        o3d_ply = PyntCloud.from_instance("open3d", ply)
+        view_origins = np.array([view.world_origin for view in scene.views])
+        views = create_point_cloud(view_origins)
+        o3d.visualization.draw_geometries([o3d_ply, views])
 
-    return pcd
+    return ply
 
 
 if __name__ == "__main__":
@@ -136,4 +156,4 @@ if __name__ == "__main__":
     #        raise RuntimeError(f"File already exists: {args.result_path[0]}")
 
     # run colorization
-    pcd = colorize_point_cloud(args.pcd_path[0], args.xml_path[0], args.img_list, args.result_path[0])
+    ply = colorize_point_cloud(args.pcd_path[0], args.xml_path[0], args.img_list, args.result_path[0])
