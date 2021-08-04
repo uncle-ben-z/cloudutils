@@ -1,50 +1,42 @@
-import os
 import numpy as np
-import open3d as o3d
 from tqdm import tqdm
-
+import pandas as pd
 from pyntcloud import PyntCloud
+from sklearn.cluster import DBSCAN
 
 
-def cluster_point_cloud(cloud_path, clusters_path):
-    """ Cluster the detected defects and stores them. """
+def cluster_point_cloud(cloud_path, eps=0.005, min_samples=3):
+    """ Cluster the detected defects and store cluster info in cloud properties. """
+    # load cloud and get relevant properties
     ply = PyntCloud.from_file(cloud_path)
+    xyz = ply.xyz
+    defects = np.array(ply.points['defect'])
+    clusters = np.int32(np.copy(defects) * 0)
 
-    # TODO: rethink if defect to color is reasonable
-    ply.points.red = 1.0 * ply.points['defect'] / 6.0
-    ply.points.green = ply.points['defect'] * 0
-    ply.points.blue = ply.points['defect'] * 0
+    # loop over all defect classes
+    for d in tqdm(np.unique(defects)[1:]):
+        # filter for current defect class
+        idxs = (defects == d)
+        X = xyz[idxs, :]
 
-    # load point cloud
-    cloud = ply.to_instance("open3d", mesh=False)  # mesh=True by default
+        # perform clustering
+        clustering = DBSCAN(eps=eps, min_samples=min_samples).fit(X)
 
-    # filter out background
-    idxs = np.array(np.nonzero(np.array(cloud.colors)[:, 0] > 0.0)[0])
-    cloud = cloud.select_by_index(idxs)
+        # assign unique ids for clusters
+        clusters[idxs] = clustering.labels_ + np.max(clusters) + 1
 
-    # find clusters
-    labels = np.array(cloud.cluster_dbscan(eps=0.005, min_points=3, print_progress=True))
-    uni, count = np.unique(labels, return_counts=True)
+        # assign 0 to invalid clusters
+        tmp = clusters[idxs] # tmp variable is needed
+        tmp[(clustering.labels_ == -1)] = 0
+        clusters[idxs] = tmp
 
-    # paint clusters
-    for lab in tqdm(uni):
-        if lab < 0:
-            continue
-        # choose modal class for point cloud
-        values, counts = np.unique(
-            np.uint8(np.asarray(cloud.colors)[np.nonzero(labels == lab)[0], :] * 6), return_counts=True)
-        values = values[values != 0]
-        counts = values[values != 0]
-        col = values[np.argmax(counts)]
-        np.asarray(cloud.colors)[np.nonzero(labels == lab)[0], 0] = 1.0 * col / 6
+    # set property and save cloud
+    ply.points['cluster'] = pd.Series(clusters)
+    ply.to_file(cloud_path + ".ply")
 
-        idxs = np.array(np.nonzero(labels == lab)[0])
-        cloud1 = cloud.select_by_index(idxs)
-        classes = ["background", "control_point", "vegetation", "efflorescence", "corrosion", "spalling", "crack"]
-        o3d.io.write_point_cloud(os.path.join(clusters_path, classes[col] + "_" + str(lab) + ".ply"), cloud1)
+    return ply
 
 
 if __name__ == "__main__":
-    cloud_path = "/home/chrisbe/Desktop/maintal_segment_small1_res.ply"
-    clusters_path = "/home/chrisbe/repos/defect-demonstration/static/uploads/2021_07_20__15_19_17/clouds"
-    cluster_point_cloud(cloud_path, clusters_path)
+    cloud_path = "/home/chrisbe/repos/defect-demonstration/static/uploads/2021_07_20__15_19_17/new_result_cloud.ply"
+    cluster_point_cloud(cloud_path=cloud_path)
