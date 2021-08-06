@@ -4,8 +4,8 @@ import networkx as nx
 from scipy.spatial.distance import cdist
 
 
-def create_graph(pcd):
-    """ Create connected graph from point cloud. """
+def crack2graph(pcd, category):
+    """ Create connected graph for cracks from point cloud. """
     # compute all pairwise distances (upper triangle)
     points = np.array(pcd.points)
     normals = np.array(pcd.normals)
@@ -15,8 +15,9 @@ def create_graph(pcd):
 
     # create nodes
     G = nx.Graph()
+
     for i, pt in enumerate(points):
-        G.add_node(i, pos=points[i, ...], normal=normals[i, ...])
+        G.add_node(i, pos=points[i, ...], normal=normals[i, ...], category=category)
 
     # connect until graph is completely connected
     while not nx.is_connected(G):
@@ -26,6 +27,38 @@ def create_graph(pcd):
         if not nx.has_path(G, src, tar):
             length = np.sqrt(np.sum(np.power(G.nodes[src]["pos"] - G.nodes[tar]["pos"], 2)))
             G.add_edge(src, tar, weight=length)
+
+    return G
+
+
+def noncrack2graph(pcd, category):
+    """ Create graph for noncracks from point cloud. """
+    # compute all pairwise distances (upper triangle)
+    points = np.array(pcd.points)
+    normals = np.array(pcd.normals)
+
+    # create nodes
+    G = nx.Graph()
+    for i, pt in enumerate(points):
+        G.add_node(i, pos=points[i, ...], normal=normals[i, ...], category=category)
+
+    # create edges (fully-connected graph)
+    for src in G.nodes:
+        for tar in range(src, len(G.nodes)):
+            length = np.sqrt(np.sum(np.power(G.nodes[src]["pos"] - G.nodes[tar]["pos"], 2)))
+            G.add_edge(src, tar, weight=length)
+
+    # compute traveling salesman
+    tsp = nx.approximation.traveling_salesman_problem
+    pts = tsp(G, cycle=True)
+
+    # changes fully-connected to tsp edges
+    G.remove_edges_from(list(G.edges))
+    for i in range(1, len(pts)):
+        length = np.sqrt(np.sum(np.power(G.nodes[pts[i - 1]]["pos"] - G.nodes[pts[i]]["pos"], 2)))
+        points = [G.nodes[pts[i - 1]]['pos'], G.nodes[pts[i]]['pos']]
+        normals = [G.nodes[pts[i - 1]]['normal'], G.nodes[pts[i]]['normal']]
+        G.add_edge(pts[i - 1], pts[i], points=points, normals=normals)
 
     return G
 
@@ -99,7 +132,7 @@ def remove_duplicates(pcd):
     return pcd_red
 
 
-def draw_lines(G):
+def draw_lines(G, cloud):
     """ Draws the nodes and edges of a graph as open3d lines. """
     # map node ids to integers
     mapping = dict(zip(G.nodes, range(len(G.nodes))))
@@ -115,4 +148,4 @@ def draw_lines(G):
     line_set.lines = o3d.utility.Vector2iVector(G.edges)
     line_set.colors = o3d.utility.Vector3dVector(colors)
 
-    o3d.visualization.draw_geometries([line_set])
+    o3d.visualization.draw_geometries([cloud, line_set])
