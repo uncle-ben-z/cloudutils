@@ -2,75 +2,110 @@ import numpy as np
 import open3d as o3d
 import networkx as nx
 from tqdm import tqdm
-from .utils import remove_duplicates, create_graph, simplify_graph, uniquify_graph_nodes, draw_lines
+from pyntcloud import PyntCloud
+from matplotlib import pyplot as plt
+from utils import remove_duplicates, crack2graph, noncrack2graph, simplify_graph, uniquify_graph_nodes, draw_lines
 
 
-def contract_point_cloud(pcd_path, graph_path, eps=0.005):
-    # load point cloud
-    pcd = o3d.io.read_point_cloud(pcd_path)
+def defect2graph(ply_path, graph_path, eps=0.005):
+    cloud = PyntCloud.from_file(ply_path)
 
-    # filter point cloud for cracks
-    idxs = np.array(np.nonzero(np.array(pcd.colors)[:, 1] < 0.2)[0])
-    pcd = pcd.select_by_index(idxs)
+    cluster = np.array(cloud.points["cluster"])
+    defect = np.array(cloud.points["defect"])
 
-    # find clusters
-    labels = np.array(pcd.cluster_dbscan(eps=eps, min_points=1, print_progress=True))
-    uni, count = np.unique(labels, return_counts=True)
-    uni = uni[count > 3]
-    count = count[count > 3]
+    # convert to open3d cloud;
+    # TODO: check normals
+    try:
+        cloud.points["nx"] = cloud.points["normal_x"]
+        cloud.points["ny"] = cloud.points["normal_y"]
+        cloud.points["nz"] = cloud.points["normal_z"]
+    except:
+        pass
+    cloud = cloud.to_instance("open3d", mesh=False, normals=True)
+    cloud.paint_uniform_color([1.0, 0.0, 0.0])
 
-    # paint clusters
-    for lab in uni:
-        np.asarray(pcd.colors)[np.nonzero(labels == lab)[0], :] = np.random.random(size=3)
-
-    o3d.visualization.draw_geometries([pcd])
+    uni, count = np.unique(cluster, return_counts=True)
 
     G_complete = nx.Graph()
 
-    # loop over components
-    for k, lab in enumerate(tqdm(uni)):
-        pcd_select = pcd.select_by_index(np.nonzero(labels == lab)[0])
+    # loop over clusters
+    for lab in tqdm(uni[1:]):
+        idxs = np.nonzero(cluster == lab)[0]
+        other_idxs = np.nonzero(cluster != lab)[0]
+
+        # select cloud of current cluster
+        subcloud = cloud.select_by_index(idxs)
+
+        # get modal (= most plausible) class
+        mode_class = np.argmax(np.bincount(defect[idxs]))
+
+        # determine bounding box
         try:
-            box_max_extend = np.max(pcd_select.get_oriented_bounding_box().extent)
+            box_extend = subcloud.get_oriented_bounding_box().extent
         except:
             continue
 
-        if box_max_extend < 0.02 or box_max_extend > 0.3:
-            continue
+        # case: crack
+        if mode_class == 6 and np.max(box_extend) > 0.02:
+            # iteratively contract
+            for radius in np.arange(0.001, eps, 0.0002):
+                kdtree = o3d.geometry.KDTreeFlann(subcloud)
 
-        # iteratively contract
-        for radius in np.arange(0.001, eps, 0.0002):
-            kdtree = o3d.geometry.KDTreeFlann(pcd_select)
-            tmp = [pcd_select.points[0], pcd_select.points[0]]
+                # loop over points and contract
+                for i in range(0, len(subcloud.points)):
+                    [_, idx, _] = kdtree.search_radius_vector_3d(subcloud.points[i], radius)
+                    try:
+                        np.asarray(subcloud.normals)[i, :] = \
+                            np.mean(np.array(subcloud.normals)[idx, ...], axis=0).reshape(-1, 3)
+                    except:
+                        o3d.visualization.draw_geometries([subcloud])
+                    np.asarray(subcloud.points)[i, :] = \
+                        np.mean(np.array(subcloud.points)[idx, ...], axis=0).reshape(-1, 3)
 
-            # loop over points and contract
-            for i in range(0, len(pcd_select.points)):
-                [_, idx, _] = kdtree.search_radius_vector_3d(pcd_select.points[i], radius)
-                np.asarray(pcd_select.points)[i, :] = \
-                    np.mean(np.array(pcd_select.points)[idx, ...], axis=0).reshape(-1, 3)
+            # remove duplicate points
+            subcloud = remove_duplicates(subcloud)
 
-        # remove duplicate points
-        pcd_select = remove_duplicates(pcd_select)
+            # create connected graph from point cloud
+            G = crack2graph(subcloud, category=mode_class)
 
-        # create connected graph from point cloud
-        G = create_graph(pcd_select)
+            # simplify graph
+            G = simplify_graph(G)
 
-        # simplify graph
-        GG = simplify_graph(G)
+            # unique node ids and compose with complete graph
+            GG = uniquify_graph_nodes(G)
+            G_complete = nx.compose(G_complete, GG)
 
-        # unique node ids and compose with complete graph
-        GG = uniquify_graph_nodes(GG)
-        G_complete = nx.compose(G_complete, GG)
+        # case: non-crack
+        elif mode_class != 6 and np.max(box_extend) > 0.01:
+            # TODO: clustering?
+            remaining_cloud = cloud.select_by_index(other_idxs)
+            kdtree = o3d.geometry.KDTreeFlann(remaining_cloud)
 
-    # save graph
+            border_idxs = []
+
+            # determine nearest neighbors in surrounding cloud
+            for i in range(0, len(subcloud.points)):
+                [_, idx, _] = kdtree.search_knn_vector_3d(subcloud.points[i], knn=1)
+                border_idxs.append(idx[0])
+
+            # select points of border cloud
+            border_cloud = remaining_cloud.select_by_index(border_idxs)
+
+            # remove duplicates
+            border_cloud = remove_duplicates(border_cloud)
+
+            # create graph
+            G = noncrack2graph(border_cloud, category=mode_class)
+            G = uniquify_graph_nodes(G)
+            G_complete = nx.compose(G_complete, G)
+
+            # draw_lines(G, border_cloud)
+
     nx.write_gpickle(G_complete, graph_path)
-
-    draw_lines(G_complete)
-
-    return G_complete
+    return
 
 
 if __name__ == "__main__":
-    contract_point_cloud(
-        pcd_path="../../static/uploads/2021_07_20__15_19_17/result_cloud.pcd",
-        graph_path="graphs/graph_complete.pickle")
+    defect2graph(
+        ply_path="../../static/uploads/2021_07_20__15_19_17/old_result_cloud.ply__.ply",
+        graph_path="../../static/uploads/2021_07_20__15_19_17/graph_complete.pickle")
