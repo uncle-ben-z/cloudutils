@@ -47,6 +47,7 @@ def defect2graph(ply_path, graph_path, eps=0.005):
 
         # case: crack
         if mode_class == 6 and np.max(box_extend) > 0.02:
+
             # iteratively contract
             for radius in np.arange(0.001, eps, 0.0002):
                 kdtree = o3d.geometry.KDTreeFlann(subcloud)
@@ -76,30 +77,63 @@ def defect2graph(ply_path, graph_path, eps=0.005):
             G_complete = nx.compose(G_complete, GG)
 
         # case: non-crack
-        elif mode_class != 6 and np.max(box_extend) > 0.01:
-            # TODO: clustering?
-            remaining_cloud = cloud.select_by_index(other_idxs)
-            kdtree = o3d.geometry.KDTreeFlann(remaining_cloud)
+        elif mode_class != 6 and np.max(box_extend) > 0.01 and mode_class >= 4:
 
-            border_idxs = []
+            # reconstruct surface
+            mesh, densities = o3d.geometry.TriangleMesh.create_from_point_cloud_poisson(subcloud, depth=9)
+            densities = np.asarray(densities)
 
-            # determine nearest neighbors in surrounding cloud
-            for i in range(0, len(subcloud.points)):
-                [_, idx, _] = kdtree.search_knn_vector_3d(subcloud.points[i], knn=1)
-                border_idxs.append(idx[0])
+            # determine threshold for densities
+            hist, bin_edges = np.histogram(densities)
+            thresh = bin_edges[np.argmax(hist) - 1]
 
-            # select points of border cloud
-            border_cloud = remaining_cloud.select_by_index(border_idxs)
+            # remove low densities
+            idxs = np.where(densities < thresh)[0]
+            mesh.remove_vertices_by_index(idxs)
+            mesh.remove_degenerate_triangles()
 
-            # remove duplicates
-            border_cloud = remove_duplicates(border_cloud)
+            # get mesh edges
+            triangles = np.array(mesh.triangles)
+            edges = []
+            for i in range(triangles.shape[0]):
+                tmp = np.sort(triangles[i, :])
+                edges.append([tmp[0], tmp[1]])
+                edges.append([tmp[0], tmp[2]])
+                edges.append([tmp[1], tmp[2]])
 
-            # create graph
-            G = noncrack2graph(border_cloud, category=mode_class)
-            G = uniquify_graph_nodes(G)
-            G_complete = nx.compose(G_complete, G)
+            # skip for low edge count
+            if len(edges) < 6:
+                continue
 
-            # draw_lines(G, border_cloud)
+            edges = np.array(edges)
+            vertices = np.array(mesh.vertices)
+            normals = np.array(mesh.vertex_normals)
+
+            # keep only unique edges (since they form the border)
+            uni, counts = np.unique(edges, return_counts=True, axis=0)
+            edges = uni[counts == 1, :]
+
+            # create nodes
+            G = nx.Graph()
+            nodes = np.unique(edges)
+            for node in nodes:
+                G.add_node(node, pos=vertices[node, ...], normal=normals[node, ...], category=mode_class)
+
+            # create edges
+            for edge in edges:
+                src, tar = edge
+                length = np.sqrt(np.sum(np.power(G.nodes[src]["pos"] - G.nodes[tar]["pos"], 2)))
+                points = [G.nodes[src]["pos"], G.nodes[tar]["pos"]]
+                normals = [G.nodes[src]["normal"], G.nodes[tar]["normal"]]
+                G.add_edge(src, tar, weight=length, points=points, normals=normals)
+
+            # add connected subgraphs to whole graph
+            S = [G.subgraph(c).copy() for c in nx.connected_components(G)]
+            for elem in S:
+                # o3d.visualization.draw_geometries([mesh, subcloud])
+                G = simplify_graph(elem)
+                G = uniquify_graph_nodes(G)
+                G_complete = nx.compose(G_complete, G)
 
     nx.write_gpickle(G_complete, graph_path)
     return

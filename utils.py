@@ -42,20 +42,19 @@ def noncrack2graph(pcd, category):
     for i, pt in enumerate(points):
         G.add_node(i, pos=points[i, ...], normal=normals[i, ...], category=category)
 
-    # create edges (fully-connected graph)
+    # create edges (to obtain fully-connected graph)
     for src in G.nodes:
         for tar in range(src, len(G.nodes)):
             length = np.sqrt(np.sum(np.power(G.nodes[src]["pos"] - G.nodes[tar]["pos"], 2)))
             G.add_edge(src, tar, weight=length)
 
-    # compute traveling salesman
+    # solve traveling salesman
     tsp = nx.approximation.traveling_salesman_problem
-    pts = tsp(G, cycle=True)
+    pts = tsp(G, cycle=False, method=nx.algorithms.approximation.traveling_salesman.greedy_tsp)
 
     # changes fully-connected to tsp edges
     G.remove_edges_from(list(G.edges))
     for i in range(1, len(pts)):
-        length = np.sqrt(np.sum(np.power(G.nodes[pts[i - 1]]["pos"] - G.nodes[pts[i]]["pos"], 2)))
         points = [G.nodes[pts[i - 1]]['pos'], G.nodes[pts[i]]['pos']]
         normals = [G.nodes[pts[i - 1]]['normal'], G.nodes[pts[i]]['normal']]
         G.add_edge(pts[i - 1], pts[i], points=points, normals=normals)
@@ -69,6 +68,17 @@ def simplify_graph(G):
     end_nodes = np.array([elem for elem in deg if elem[1] == 1])
     inter_nodes = np.array([elem for elem in deg if elem[1] > 2])
     inter_and_end_nodes = np.array([elem for elem in deg if elem[1] != 2])
+
+    # cycle case
+    if len(inter_and_end_nodes) == 0:
+        # get cycle path and convert to graph edge
+        path = nx.cycle_basis(G)[0]
+        points = [G.nodes[elem]['pos'] for elem in path]
+        normals = [G.nodes[elem]['normal'] for elem in path]
+        GG = nx.Graph(G.subgraph([path[0]]))
+        GG.add_edge(path[0], path[0], points=points, normals=normals)
+
+        return GG
 
     GG = nx.Graph(G.subgraph(inter_and_end_nodes[:, 0]))
 
@@ -132,7 +142,7 @@ def remove_duplicates(pcd):
     return pcd_red
 
 
-def draw_lines(G, cloud):
+def draw_lines(G, cloud=None):
     """ Draws the nodes and edges of a graph as open3d lines. """
     # map node ids to integers
     mapping = dict(zip(G.nodes, range(len(G.nodes))))
