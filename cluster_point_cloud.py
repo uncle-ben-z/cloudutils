@@ -5,7 +5,7 @@ from pyntcloud import PyntCloud
 from sklearn.cluster import DBSCAN
 
 
-def cluster_point_cloud(cloud_path, eps=0.005, min_samples=3):
+def cluster_point_cloud(cloud_path, result_path, eps=0.005, min_samples=3):
     """ Cluster the detected defects and store cluster info in cloud properties. """
     # load cloud and get relevant properties
     ply = PyntCloud.from_file(cloud_path)
@@ -14,9 +14,13 @@ def cluster_point_cloud(cloud_path, eps=0.005, min_samples=3):
     clusters = np.int32(np.copy(defects) * 0)
 
     # loop over all defect classes
-    for d in tqdm(np.unique(defects)[1:]):
+    for d in tqdm([1,2,3,4,6]):
         # filter for current defect class
-        idxs = (defects == d)
+        if d == 4:
+            # account for exposed rebars
+            np.where((defects == 4) | (defects == 5), True, False)
+        else:
+            idxs = (defects == d)
         X = xyz[idxs, :]
 
         # perform clustering
@@ -32,11 +36,11 @@ def cluster_point_cloud(cloud_path, eps=0.005, min_samples=3):
 
     # set property and save cloud
     ply.points['cluster'] = pd.Series(clusters)
-    ply.to_file(cloud_path + ".ply")
+    ply.to_file(result_path)
 
     return ply
 
 
 if __name__ == "__main__":
-    cloud_path = "/home/chrisbe/repos/defect-demonstration/static/uploads/2021_07_20__15_19_17/new_result_cloud.ply"
-    cluster_point_cloud(cloud_path=cloud_path)
+    cloud_path = "/home/chrisbe/repos/defect-demonstration/static/uploads/mtb/points_colorized.ply" #"/home/chrisbe/repos/defect-demonstration/static/uploads/mtb/ausschnitt.ply"#/home/chrisbe/repos/defect-demonstration/static/uploads/2021_07_20__15_19_17/new_result_cloud.ply"
+    cluster_point_cloud(cloud_path=cloud_path, result_path="/home/chrisbe/repos/defect-demonstration/static/uploads/mtb/points_colorized_clustered2.ply")#"/home/chrisbe/repos/defect-demonstration/static/uploads/mtb/ausschnitt_cluster.ply")
