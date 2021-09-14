@@ -18,7 +18,7 @@ def cluster_point_cloud(cloud_path, result_path, eps=0.005, min_samples=3):
         # filter for current defect class
         if d == 4:
             # account for exposed rebars
-            np.where((defects == 4) | (defects == 5), True, False)
+            idxs = np.where((defects == 4) | (defects == 5), True, False)
         else:
             idxs = (defects == d)
         X = xyz[idxs, :]
