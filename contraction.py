@@ -4,7 +4,7 @@ import networkx as nx
 from tqdm import tqdm
 from pyntcloud import PyntCloud
 from matplotlib import pyplot as plt
-from utils import remove_duplicates, crack2graph, noncrack2graph, simplify_graph, uniquify_graph_nodes, draw_lines
+from graphutils import remove_duplicates, crack2graph, noncrack2graph, simplify_graph, uniquify_graph_nodes
 
 
 def defect2graph(ply_path, graph_path, eps=0.005):

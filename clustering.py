@@ -41,6 +41,8 @@ def cluster_point_cloud(cloud_path, result_path, eps=0.005, min_samples=3):
     return ply
 
 
+
+
 if __name__ == "__main__":
-    cloud_path = "/home/chrisbe/repos/defect-demonstration/static/uploads/mtb/points_colorized.ply" #"/home/chrisbe/repos/defect-demonstration/static/uploads/mtb/ausschnitt.ply"#/home/chrisbe/repos/defect-demonstration/static/uploads/2021_07_20__15_19_17/new_result_cloud.ply"
-    cluster_point_cloud(cloud_path=cloud_path, result_path="/home/chrisbe/repos/defect-demonstration/static/uploads/mtb/points_colorized_clustered2.ply")#"/home/chrisbe/repos/defect-demonstration/static/uploads/mtb/ausschnitt_cluster.ply")
+    cloud_path = "/home/******/repos/defect-demonstration/static/uploads/mtb/points_colorized.ply" #"/home/******/repos/defect-demonstration/static/uploads/mtb/ausschnitt.ply"#/home/******/repos/defect-demonstration/static/uploads/2021_07_20__15_19_17/new_result_cloud.ply"
+    cluster_point_cloud(cloud_path=cloud_path, result_path="/home/******/repos/defect-demonstration/static/uploads/mtb/points_colorized_clustered2.ply")#"/home/******/repos/defect-demonstration/static/uploads/mtb/ausschnitt_cluster.ply")

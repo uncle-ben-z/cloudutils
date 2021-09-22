@@ -1,186 +1,60 @@
+import cv2
+import laspy
 import numpy as np
-import open3d as o3d
-import networkx as nx
-from scipy.spatial.distance import cdist
-
-def create_point_cloud(array):
-    pcd = o3d.geometry.PointCloud()
-    pcd.points = o3d.utility.Vector3dVector(array)
-    pcd.paint_uniform_color([1.0, 0.0, 0.0])
-    return pcd
+from scipy.spatial import ConvexHull
+from matplotlib import pyplot as plt
 
 
-def set_color(argmax):
-    if argmax == 0:
-        col = [228 / 255, 26 / 255, 28 / 255]
-    elif argmax == 1:
-        col = [255 / 255, 127 / 255, 0 / 255]
-    elif argmax == 2:
-        col = [255 / 255, 255 / 255, 51 / 255]
-    elif argmax == 3:
-        col = [55 / 255, 126 / 255, 184 / 255]
-    elif argmax == 4:
-        col = [77 / 255, 175 / 255, 74 / 255]
-    elif argmax == 5:
-        col = [152 / 255, 78 / 255, 163 / 255]
-    else:
-        col = [0.7, 0.7, 0.7]
+def compute_sharpness(img, thresh=3):
+    """ Computes the local sharpness."""
+    img = cv2.GaussianBlur(img, (3, 3), 0)
+    img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
-    return col
+    # laplacian (w/ diagonal)
+    grad = cv2.filter2D(img, cv2.CV_64F, np.array([[1, 1, 1], [1, -8, 1], [1, 1, 1]]))
+    grad = np.uint8((np.abs(grad) / 2040) * 255)
 
+    # compute binary mask
+    _, mask = cv2.threshold(grad, thresh, 255, cv2.THRESH_BINARY)
+    mask = cv2.erode(mask, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3)))
 
-def crack2graph(pcd, category):
-    """ Create connected graph for cracks from point cloud. """
-    # compute all pairwise distances (upper triangle)
-    points = np.array(pcd.points)
-    normals = np.array(pcd.normals)
-    dist = cdist(points, points)
-    dist = np.triu(dist, k=0)
-    dist[dist == 0] = np.inf
+    # compute convex hull
+    pts = np.nonzero(mask)
+    pts = np.array(pts).T
+    hull = ConvexHull(pts)
+    pts[:, [0, 1]] = pts[:, [1, 0]]
+    mask = cv2.fillPoly(mask, [pts[hull.vertices, :]], color=255)
 
-    # create nodes
-    G = nx.Graph()
+    # dilate gradient
+    grad = cv2.dilate(grad, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (150, 150)))
+    grad = cv2.blur(grad, (100, 100))
 
-    for i, pt in enumerate(points):
-        G.add_node(i, pos=points[i, ...], normal=normals[i, ...], category=category)
+    if False:
+        ax = plt.subplot(221)
+        plt.imshow(img, 'gray')
+        plt.subplot(222, sharex=ax, sharey=ax)
+        plt.imshow(img)
+        plt.plot(pts[hull.vertices, 0], pts[hull.vertices, 1], 'r--', lw=2)
+        plt.plot(pts[:, 0], pts[:, 1], '.')
+        plt.subplot(223, sharex=ax, sharey=ax)
+        plt.imshow(mask)
+        plt.subplot(224, sharex=ax, sharey=ax)
+        plt.imshow(grad)
+        plt.show()
 
-    # connect until graph is completely connected
-    while not nx.is_connected(G):
-        src, tar = np.unravel_index(dist.argmin(), dist.shape)
-        dist[src, tar] = np.inf
-
-        if not nx.has_path(G, src, tar):
-            length = np.sqrt(np.sum(np.power(G.nodes[src]["pos"] - G.nodes[tar]["pos"], 2)))
-            G.add_edge(src, tar, weight=length)
-
-    return G
+    return mask, grad
 
 
-def noncrack2graph(pcd, category):
-    """ Create graph for noncracks from point cloud. """
-    # compute all pairwise distances (upper triangle)
-    points = np.array(pcd.points)
-    normals = np.array(pcd.normals)
-
-    # create nodes
-    G = nx.Graph()
-    for i, pt in enumerate(points):
-        G.add_node(i, pos=points[i, ...], normal=normals[i, ...], category=category)
-
-    # create edges (to obtain fully-connected graph)
-    for src in G.nodes:
-        for tar in range(src, len(G.nodes)):
-            length = np.sqrt(np.sum(np.power(G.nodes[src]["pos"] - G.nodes[tar]["pos"], 2)))
-            G.add_edge(src, tar, weight=length)
-
-    # solve traveling salesman
-    tsp = nx.approximation.traveling_salesman_problem
-    pts = tsp(G, cycle=False, method=nx.algorithms.approximation.traveling_salesman.greedy_tsp)
-
-    # changes fully-connected to tsp edges
-    G.remove_edges_from(list(G.edges))
-    for i in range(1, len(pts)):
-        points = [G.nodes[pts[i - 1]]['pos'], G.nodes[pts[i]]['pos']]
-        normals = [G.nodes[pts[i - 1]]['normal'], G.nodes[pts[i]]['normal']]
-        G.add_edge(pts[i - 1], pts[i], points=points, normals=normals)
-
-    return G
-
-
-def simplify_graph(G):
-    """ Removes intermediate nodes with only two neighbors. """
-    deg = G.degree(G.nodes)
-    end_nodes = np.array([elem for elem in deg if elem[1] == 1])
-    inter_nodes = np.array([elem for elem in deg if elem[1] > 2])
-    inter_and_end_nodes = np.array([elem for elem in deg if elem[1] != 2])
-
-    # cycle case
-    if len(inter_and_end_nodes) == 0:
-        # get cycle path and convert to graph edge
-        path = nx.cycle_basis(G)[0]
-        points = [G.nodes[elem]['pos'] for elem in path]
-        normals = [G.nodes[elem]['normal'] for elem in path]
-        GG = nx.Graph(G.subgraph([path[0]]))
-        GG.add_edge(path[0], path[0], points=points, normals=normals)
-
-        return GG
-
-    GG = nx.Graph(G.subgraph(inter_and_end_nodes[:, 0]))
-
-    # furcations absent
-    if len(inter_nodes) == 0:
-        path = nx.shortest_path(G, end_nodes[0, 0], end_nodes[-1, 0])
-        points = [G.nodes[elem]['pos'] for elem in path]
-        normals = [G.nodes[elem]['normal'] for elem in path]
-        GG.add_edge(path[0], path[-1], points=points, normals=normals)
-
-    # furcations present: loop over inter nodes
-    for source in inter_nodes:
-        source = source[0]
-
-        # case: inter node to end node
-        for target in end_nodes:
-            target = target[0]
-            path = nx.shortest_path(G, source, target)
-
-            # if only exactly this inter node in path, add path
-            if np.sum(np.isin(inter_nodes[:, 0], path)) == 1:
-                points = [G.nodes[elem]['pos'] for elem in path]
-                normals = [G.nodes[elem]['normal'] for elem in path]
-                GG.add_edge(path[0], path[-1], points=points, normals=normals)
-
-        # case: inter node to inter node
-        for target in inter_nodes:
-            target = target[0]
-            path = nx.shortest_path(G, source, target)
-
-            # if only exactly these two inter node in path, add path
-            if np.sum(np.isin(inter_nodes[:, 0], path)) == 2:
-                points = [G.nodes[elem]['pos'] for elem in path]
-                normals = [G.nodes[elem]['normal'] for elem in path]
-                GG.add_edge(path[0], path[-1], points=points, normals=normals)
-
-    return GG
-
-
-def uniquify_graph_nodes(G):
-    """ Converts node IDs into unique (position-based) IDs. """
-    name_mapping = dict()
-    for node in G.nodes:
-        name_mapping[node] = "_".join(G.nodes[node]["pos"].astype(str))
-
-    G = nx.relabel_nodes(G, name_mapping)
-    return G
-
-
-def remove_duplicates(pcd):
-    """ Removes identical points from point cloud. """
-    # rounding required
-    pcd.points = o3d.utility.Vector3dVector(np.round(np.array(pcd.points), 4))
-    uni, idxs = np.unique(np.array(pcd.points), return_index=True, axis=0)
-    # create reduced point cloud
-    pcd_red = o3d.geometry.PointCloud()
-    pcd_red.points = o3d.utility.Vector3dVector(np.array(pcd.points)[idxs, :])
-    pcd_red.colors = o3d.utility.Vector3dVector(np.array(pcd.colors)[idxs, :])
-    pcd_red.normals = o3d.utility.Vector3dVector(np.array(pcd.normals)[idxs, :])
-
-    return pcd_red
-
-
-def draw_lines(G, cloud=None):
-    """ Draws the nodes and edges of a graph as open3d lines. """
-    # map node ids to integers
-    mapping = dict(zip(G.nodes, range(len(G.nodes))))
-    G = nx.relabel_nodes(G, mapping)
-
-    # determine points and colors
-    points = np.array(list(nx.get_node_attributes(G, 'pos').values()))
-    colors = [[1, 0, 0] for i in range(len(G.nodes))]
-
-    # create line set
-    line_set = o3d.geometry.LineSet()
-    line_set.points = o3d.utility.Vector3dVector(points)
-    line_set.lines = o3d.utility.Vector2iVector(G.edges)
-    line_set.colors = o3d.utility.Vector3dVector(colors)
-
-    o3d.visualization.draw_geometries([cloud, line_set])
+def cloud2las(cloud, filepath):
+    """ Converts ply point cloud into las (including class information). """
+    las = laspy.create(file_version="1.2", point_format=2)
+    las.header.scales = np.array([1e-05, 1e-05, 1e-05])
+    las.x = np.array(cloud.points.x)
+    las.y = np.array(cloud.points.y)
+    las.z = np.array(cloud.points.z)
+    las.red = np.array(cloud.points.red)
+    las.green = np.array(cloud.points.green)
+    las.blue = np.array(cloud.points.blue)
+    las.classification = np.array(cloud.points['defect'])
+    las.write(filepath)
+    return
