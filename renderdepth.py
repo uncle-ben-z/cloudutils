@@ -14,7 +14,7 @@ def render_depths(path, xml_path, ply_path):
     images = [os.path.join(path, elem) for elem in images]
     chunk.addPhotos(images)  # photos need to be added
     chunk.importCameras(xml_path)
-    chunk.importPoints()
+    chunk.importPoints(ply_path)
 
     for j, camera in enumerate(chunk.cameras):
         print(camera.label)

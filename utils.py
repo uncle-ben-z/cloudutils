@@ -45,7 +45,7 @@ def compute_sharpness(img, thresh=3):
     return mask, grad
 
 
-def cloud2las(cloud, filepath):
+def ply2las(cloud, filepath):
     """ Converts ply point cloud into las (including class information). """
     las = laspy.create(file_version="1.2", point_format=2)
     las.header.scales = np.array([1e-05, 1e-05, 1e-05])
@@ -56,5 +56,7 @@ def cloud2las(cloud, filepath):
     las.green = np.array(cloud.points.green)
     las.blue = np.array(cloud.points.blue)
     las.classification = np.array(cloud.points['defect'])
+    las.pt_src_id = np.array(cloud.points['cluster'], np.uint16)
+    las.intensity = np.array(cloud.points['confidence'] * 255, np.uint8)
     las.write(filepath)
     return
