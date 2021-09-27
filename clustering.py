@@ -15,7 +15,7 @@ def cluster_point_cloud(cloud_path, result_path, eps=0.005, min_samples=3):
     meta_clusters = np.int32(np.copy(defects) * 0)
 
     # loop over all defect classes
-    for d in tqdm(np.unique(defects)):
+    for d in tqdm(np.unique(defects)[1:]):
         # filter for current defect class
         if d == 5:
             # account for exposed rebars

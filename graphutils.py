@@ -70,9 +70,10 @@ def simplify_graph(G):
     inter_and_end_nodes = np.array([elem for elem in deg if elem[1] != 2])
 
     # cycle case
-    if len(inter_and_end_nodes) == 0:
-        # get cycle path and convert to graph edge
-        path = nx.cycle_basis(G)[0]
+    if len(inter_and_end_nodes) <= 1:
+        # get path of largest cycle and convert to graph edge
+        cycles = nx.cycle_basis(G)
+        path = sorted(cycles, key=lambda elem: G.subgraph(elem).size(weight="weight"), reverse=True)[0]
         points = [G.nodes[elem]['pos'] for elem in path]
         normals = [G.nodes[elem]['normal'] for elem in path]
         GG = nx.Graph(G.subgraph([path[0]]))

@@ -6,14 +6,13 @@ from pyntcloud import PyntCloud
 from matplotlib import pyplot as plt
 
 try:
-    from graphutils import remove_duplicates, crack2graph, noncrack2graph, simplify_graph, uniquify_graph_nodes, \
-        draw_lines
+    from graphutils import remove_duplicates, crack2graph, noncrack2graph, simplify_graph, uniquify_graph_nodes
 except:
-    from .graphutils import remove_duplicates, crack2graph, noncrack2graph, simplify_graph, uniquify_graph_nodes, \
-        draw_lines
+    from .graphutils import remove_duplicates, crack2graph, noncrack2graph, simplify_graph, uniquify_graph_nodes
 
 
 def defect2graph(ply_path, graph_path, eps=0.005):
+    """ Translate detected defects into networkx graph. """
     cloud = PyntCloud.from_file(ply_path)
 
     defect = np.array(cloud.points["defect"])
@@ -26,7 +25,7 @@ def defect2graph(ply_path, graph_path, eps=0.005):
         cloud.points["nz"] = cloud.points["normal_z"]
 
     cloud = cloud.to_instance("open3d", mesh=False, normals=True)
-    cloud.paint_uniform_color([1.0, 0.0, 0.0])
+    cloud.paint_uniform_color([1.0, 0.0, 1.0])
 
     G_complete = nx.Graph()
 
@@ -45,13 +44,9 @@ def defect2graph(ply_path, graph_path, eps=0.005):
             # get modal (= most plausible) class
             counts = np.bincount(defect[idxs], minlength=7)
 
-            # exposed rebar
-            """if np.all(np.isin(np.argsort(counts)[-2:], [4, 5])) and \
-                    counts[np.argsort(counts)[-2]] > 0.1 * counts[np.argsort(counts)[-1]]:
-                mode_class = 7
-            else:"""
+            # determine classes
             if c == 1 and counts[4] > 0 and counts[5] > 0:
-                mode_class = 7
+                mode_class = 7 #exposed rebar
             elif c == 1 and counts[4] == 0 and counts[5] > 0:
                 mode_class = 5
             elif c == 1 and counts[4] > 0 and counts[5] == 0:
@@ -67,7 +62,6 @@ def defect2graph(ply_path, graph_path, eps=0.005):
 
             # crack case
             if mode_class == 6 and np.max(box_extend) > 0.02:
-
                 # iteratively contract
                 for radius in np.arange(0.002, eps, 0.0002):
                     kdtree = o3d.geometry.KDTreeFlann(subcloud)
@@ -107,12 +101,16 @@ def defect2graph(ply_path, graph_path, eps=0.005):
                 hist, bin_edges = np.histogram(densities)
                 thresh = bin_edges[np.argmax(hist) - 1]
 
-                # o3d.visualization.draw_geometries([mesh, subcloud])
+                # skip low density
+                if thresh < 3:
+                    continue
 
                 # remove low densities
                 idxs = np.where(densities < thresh)[0]
                 mesh.remove_vertices_by_index(idxs)
                 mesh.remove_degenerate_triangles()
+
+                #o3d.visualization.draw_geometries([mesh, subcloud])
 
                 # get mesh edges
                 triangles = np.array(mesh.triangles)
@@ -151,7 +149,10 @@ def defect2graph(ply_path, graph_path, eps=0.005):
 
                 # add connected subgraphs to whole graph
                 S = [G.subgraph(c).copy() for c in nx.connected_components(G)]
+
                 for elem in S:
+                    if elem.size(weight="weight") < 0.06:
+                        continue
                     # o3d.visualization.draw_geometries([mesh, subcloud])
                     G = simplify_graph(elem)
                     G = uniquify_graph_nodes(G)
@@ -163,6 +164,6 @@ def defect2graph(ply_path, graph_path, eps=0.005):
 
 if __name__ == "__main__":
     defect2graph(
-        ply_path="/home/******/repos/defect-demonstration/static/uploads/bbv/balken_6_2M_clustered.ply",#/home/******/repos/defect-demonstration/static/uploads/mtb/ausschnitt_clustered.ply",
-        graph_path="/home/******/repos/defect-demonstration/static/uploads/bbv/balken_6_2M_clustered.pickle"
+        ply_path="/home/******/repos/defect-demonstration/static/uploads/mtb/exprebar_clustered.ply",
+        graph_path="/home/******/repos/defect-demonstration/static/uploads/mtb/exprebar_clustered.pickle"
     )
