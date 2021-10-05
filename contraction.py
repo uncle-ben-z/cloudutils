@@ -36,7 +36,6 @@ def defect2graph(ply_path, graph_path, eps=0.005):
         # loop over clusters
         for lab in tqdm(uni[1:]):
             idxs = np.nonzero(cluster == lab)[0]
-            other_idxs = np.nonzero(cluster != lab)[0]
 
             # select cloud of current cluster
             subcloud = cloud.select_by_index(idxs)
