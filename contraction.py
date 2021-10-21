@@ -3,6 +3,7 @@ import open3d as o3d
 import networkx as nx
 from tqdm import tqdm
 from pyntcloud import PyntCloud
+from scipy.spatial import distance
 from matplotlib import pyplot as plt
 
 try:
@@ -45,7 +46,7 @@ def defect2graph(ply_path, graph_path, eps=0.005):
 
             # determine classes
             if c == 1 and counts[4] > 0 and counts[5] > 0:
-                mode_class = 7 #exposed rebar
+                mode_class = 7  # exposed rebar
             elif c == 1 and counts[4] == 0 and counts[5] > 0:
                 mode_class = 5
             elif c == 1 and counts[4] > 0 and counts[5] == 0:
@@ -61,26 +62,36 @@ def defect2graph(ply_path, graph_path, eps=0.005):
 
             # crack case
             if mode_class == 6 and np.max(box_extend) > 0.02:
+
                 # iteratively contract
-                for radius in np.arange(0.002, eps, 0.0002):
+                for radius in np.arange(eps / 4, eps / 2, 0.0002):
                     kdtree = o3d.geometry.KDTreeFlann(subcloud)
 
                     # loop over points and contract
                     for i in range(0, len(subcloud.points)):
                         [_, idx, _] = kdtree.search_radius_vector_3d(subcloud.points[i], radius)
+
+                        # L1 median
+                        subcloud_pts = np.array(subcloud.points)[idx, ...]
+                        idx_med = np.argmin(np.sum(distance.cdist(subcloud_pts, subcloud_pts), axis=0))
+
                         try:
                             np.asarray(subcloud.normals)[i, :] = \
-                                np.mean(np.array(subcloud.normals)[idx, ...], axis=0).reshape(-1, 3)
+                                np.array(subcloud.normals)[idx[idx_med], ...].reshape(-1, 3)
+
                         except:
                             o3d.visualization.draw_geometries([subcloud])
                         np.asarray(subcloud.points)[i, :] = \
-                            np.mean(np.array(subcloud.points)[idx, ...], axis=0).reshape(-1, 3)
+                            np.array(subcloud.points)[idx[idx_med], ...].reshape(-1, 3)
 
-                # remove duplicate points
+                        # remove duplicate points
                 subcloud = remove_duplicates(subcloud)
 
                 # create connected graph from point cloud
                 G = crack2graph(subcloud, category=mode_class)
+
+                if len(G.nodes) <= 1:
+                    continue
 
                 # simplify graph
                 G = simplify_graph(G)
@@ -91,7 +102,6 @@ def defect2graph(ply_path, graph_path, eps=0.005):
 
             # non-crack case
             elif mode_class != 6 and np.max(box_extend) > 0.01 and mode_class >= 4:
-
                 # reconstruct surface
                 mesh, densities = o3d.geometry.TriangleMesh.create_from_point_cloud_poisson(subcloud, depth=9)
                 densities = np.asarray(densities)
@@ -109,7 +119,7 @@ def defect2graph(ply_path, graph_path, eps=0.005):
                 mesh.remove_vertices_by_index(idxs)
                 mesh.remove_degenerate_triangles()
 
-                #o3d.visualization.draw_geometries([mesh, subcloud])
+                # o3d.visualization.draw_geometries([mesh, subcloud])
 
                 # get mesh edges
                 triangles = np.array(mesh.triangles)
