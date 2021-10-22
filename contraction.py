@@ -62,7 +62,6 @@ def defect2graph(ply_path, graph_path, eps=0.005):
 
             # crack case
             if mode_class == 6 and np.max(box_extend) > 0.02:
-
                 # iteratively contract
                 for radius in np.arange(eps / 4, eps / 2, 0.0002):
                     kdtree = o3d.geometry.KDTreeFlann(subcloud)
@@ -118,6 +117,7 @@ def defect2graph(ply_path, graph_path, eps=0.005):
                 idxs = np.where(densities < thresh)[0]
                 mesh.remove_vertices_by_index(idxs)
                 mesh.remove_degenerate_triangles()
+                mesh.compute_vertex_normals()
 
                 # o3d.visualization.draw_geometries([mesh, subcloud])
 
@@ -136,34 +136,54 @@ def defect2graph(ply_path, graph_path, eps=0.005):
 
                 edges = np.array(edges)
                 vertices = np.array(mesh.vertices)
-                normals = np.array(mesh.vertex_normals)
 
-                # keep only unique edges (since they form the border)
+                # get non-unique edges (since they don't form the border)
                 uni, counts = np.unique(edges, return_counts=True, axis=0)
-                edges = uni[counts == 1, :]
+                edges_non_uni = uni[counts != 1, :]
 
-                # create nodes
-                G = nx.Graph()
-                nodes = np.unique(edges)
-                for node in nodes:
-                    G.add_node(node, pos=vertices[node, ...], normal=normals[node, ...], category=mode_class)
+                # create graph
+                GG = nx.Graph()
+                GG.add_nodes_from(np.arange(len(vertices)))
+                GG.add_edges_from(edges)
 
-                # create edges
-                for edge in edges:
-                    src, tar = edge
-                    length = np.sqrt(np.sum(np.power(G.nodes[src]["pos"] - G.nodes[tar]["pos"], 2)))
-                    points = [G.nodes[src]["pos"], G.nodes[tar]["pos"]]
-                    normals = [G.nodes[src]["normal"], G.nodes[tar]["normal"]]
-                    G.add_edge(src, tar, weight=length, points=points, normals=normals)
-
-                # add connected subgraphs to whole graph
-                S = [G.subgraph(c).copy() for c in nx.connected_components(G)]
-
+                # loop over connected components
+                S = [GG.subgraph(c).copy() for c in nx.connected_components(GG)]
                 for elem in S:
-                    if elem.size(weight="weight") < 0.06:
+                    # remove non-border edges
+                    elem.remove_edges_from(edges_non_uni)
+
+                    # find cycles
+                    cycles = nx.cycle_basis(elem)
+                    if len(cycles) == 0:
                         continue
+                    if len(cycles) > 1:
+                        # which one of the cycles is the largest -> keep it
+                        # get cycle with most nodes (~ longest cycle)
+                        nodes = cycles[np.argmax(np.array([len(c) for c in cycles]))]
+                    else:
+                        nodes = cycles[0]
+
+                    edges = np.array([nodes, np.roll(nodes, shift=1)]).T
+
+                    # create nodes
+                    G = nx.Graph()
+                    for node in nodes:
+                        G.add_node(node, pos=vertices[node, ...], normal=np.array(mesh.vertex_normals)[node, ...],
+                                   category=mode_class)
+
+                    # create edges
+                    for edge in edges:
+                        src, tar = edge
+                        length = np.sqrt(np.sum(np.power(G.nodes[src]["pos"] - G.nodes[tar]["pos"], 2)))
+                        points = [G.nodes[src]["pos"], G.nodes[tar]["pos"]]
+                        normals = [G.nodes[src]["normal"], G.nodes[tar]["normal"]]
+                        G.add_edge(src, tar, weight=length, points=points, normals=normals)
+
+                    if G.size(weight="weight") < 0.06:
+                        continue
+
                     # o3d.visualization.draw_geometries([mesh, subcloud])
-                    G = simplify_graph(elem)
+                    G = simplify_graph(G)
                     G = uniquify_graph_nodes(G)
                     G_complete = nx.compose(G_complete, G)
 
