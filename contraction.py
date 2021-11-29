@@ -63,7 +63,7 @@ def defect2graph(ply_path, graph_path, eps=0.005):
             # crack case
             if mode_class == 6 and np.max(box_extend) > 0.02:
                 # iteratively contract
-                for radius in np.arange(eps / 4, eps / 2, 0.0002):
+                for radius in np.arange(eps / 6, eps / 4, 0.0002):
                     kdtree = o3d.geometry.KDTreeFlann(subcloud)
 
                     # loop over points and contract
