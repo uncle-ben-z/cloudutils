@@ -9,9 +9,16 @@ def render_depths(path, xml_path, ply_path):
     doc = Metashape.Document()
     chunk = doc.addChunk()
 
+    outpath = path.replace("0_images", "10_depth")
+
     # add xml, cameras, and cloud to chunk
     images = os.listdir(path)
     images = [os.path.join(path, elem) for elem in images]
+
+    if len(images) == len(os.listdir(outpath)):
+        print("depth already computed")
+        return
+
     chunk.addPhotos(images)  # photos need to be added
     chunk.importCameras(xml_path)
     chunk.importPoints(ply_path)
@@ -21,7 +28,7 @@ def render_depths(path, xml_path, ply_path):
         if not camera.enabled or camera.transform is None:
             continue
 
-        if os.path.exists(os.path.join(path.replace("0_images", "10_depth"), camera.label) + ".npy"):
+        if os.path.exists(os.path.join(outpath, camera.label) + ".npy"):
             continue
         # render depth
         depth = chunk.dense_cloud.renderDepth(camera.transform, camera.sensor.calibration, point_size=20)
@@ -38,4 +45,4 @@ def render_depths(path, xml_path, ply_path):
         depth_scale = 0.25
         depth_np = depth_np[::int(1 / depth_scale), ::int(1 / depth_scale)]
 
-        np.save(os.path.join(path.replace("0_images", "10_depth"), camera.label), depth_np)
+        np.save(os.path.join(outpath, camera.label), depth_np)
