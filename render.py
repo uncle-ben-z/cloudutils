@@ -2,8 +2,6 @@ import os
 import Metashape
 import numpy as np
 from scipy import ndimage
-from projection import parse_agisoft_xml
-
 
 def render_depths(path, xml_path, ply_path):
     """ Uses agisoft to render the absolute depth to the dense point cloud. """
@@ -50,6 +48,7 @@ def render_depths(path, xml_path, ply_path):
 
 
 def render_views(model_path, cameras_path, out_path, is_cloud=False):
+    from projection import parse_agisoft_xml
     """ Uses agisoft to render views. """
     doc = Metashape.Document()
     chunk = doc.addChunk()
