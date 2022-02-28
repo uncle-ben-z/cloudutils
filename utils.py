@@ -1,7 +1,7 @@
 import cv2
 import laspy
 import numpy as np
-from scipy.spatial import ConvexHull
+import open3d as o3d
 from matplotlib import pyplot as plt
 
 
@@ -36,3 +36,11 @@ def ply2las(cloud, filepath):
     las.intensity = np.array(cloud.points['confidence'] * 255, np.uint8)
     las.write(filepath)
     return
+
+
+def mesh2cloud(source_path, target_path, count=1000000):
+    """ Samples a point cloud from a mesh. """
+    mesh = o3d.io.read_triangle_mesh(source_path)
+    cloud = mesh.sample_points_uniformly(count, True)
+    o3d.io.write_point_cloud(target_path, cloud)
+
