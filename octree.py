@@ -68,17 +68,15 @@ def colorize_subcloud(scene, folder_path, foldername, subcloud_name):
     )
 
 
-def recombine_subclouds(folder_path, foldername, cloudname):
-    path = os.path.join(folder_path, foldername, "12_octree")
-
+def recombine_subclouds(source_path, target_path):
     cloud = None
 
     # recombine point cloud
-    for i, f in enumerate([f for f in os.listdir(path) if "colorized.ply" in f]):
-        subcloud = PyntCloud.from_file(os.path.join(path, f))
+    for i, f in enumerate([f for f in os.listdir(source_path) if "colorized.ply" in f]):
+        subcloud = PyntCloud.from_file(os.path.join(source_path, f))
         if i == 0:
             cloud = subcloud
         else:
             cloud.points = cloud.points.append(subcloud.points)
 
-    cloud.to_file(os.path.join(folder_path, foldername, cloudname.replace(".", "_colorized2.")))
+    cloud.to_file(target_path)
