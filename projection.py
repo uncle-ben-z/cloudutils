@@ -64,7 +64,7 @@ class View:
 class Camera:
     """ Camera class representing the intrinsic properties of a camera. """
 
-    def __init__(self, f, k1, k2, k3=0, k4=0, p1=0, p2=0, cx=0, cy=0, w=0, h=0,
+    def __init__(self, f, k1, k2, k3=0, k4=0, p1=0, p2=0, p3=0, p4=0, b1=0, b2=0, cx=0, cy=0, w=0, h=0,
                  pixel_width=1., pixel_height=1., focal_length=1.):
         self.f = f
         self.k1 = k1
@@ -73,6 +73,10 @@ class Camera:
         self.k4 = k4
         self.p1 = p1
         self.p2 = p2
+        self.p3 = p3
+        self.p4 = p4
+        self.b1 = b1
+        self.b2 = b2
         self.cx = cx
         self.cy = cy
         self.w = w
@@ -91,6 +95,10 @@ class Camera:
         out += "\nk4: \t" + str(self.k4)
         out += "\np1: \t" + str(self.p1)
         out += "\np2: \t" + str(self.p2)
+        out += "\np3: \t" + str(self.p3)
+        out += "\np4: \t" + str(self.p4)
+        out += "\nb1: \t" + str(self.b1)
+        out += "\nb2: \t" + str(self.b2)
         out += "\nw: \t" + str(self.w)
         out += "\nh: \t" + str(self.h)
         return out
@@ -117,7 +125,7 @@ class Camera:
         x, y = self._radial_distortion(x, y)
 
         # transform to image coordinates
-        u = self.w * 0.5 + self.cx + x * self.f
+        u = self.w * 0.5 + self.cx + x * self.f + x * self.b1 + y * self.b2
         v = self.h * 0.5 + self.cy + y * self.f
 
         # apply scale
@@ -171,6 +179,10 @@ def parse_agisoft_xml(path):
         k4 = float(calib.find('k4').text) if calib.find('k4') is not None else 0
         p1 = float(calib.find('p1').text) if calib.find('p1') is not None else 0
         p2 = float(calib.find('p2').text) if calib.find('p2') is not None else 0
+        p3 = float(calib.find('p1').text) if calib.find('p1') is not None else 0
+        p4 = float(calib.find('p2').text) if calib.find('p2') is not None else 0
+        b1 = float(calib.find('b1').text) if calib.find('p1') is not None else 0
+        b2 = float(calib.find('b2').text) if calib.find('p2') is not None else 0
         w = int(calib.find('resolution').attrib['width'])
         h = int(calib.find('resolution').attrib['height'])
 
@@ -183,7 +195,7 @@ def parse_agisoft_xml(path):
                 focal_length = float(prop.attrib['value'])
 
         # store intrinsics
-        intrinsics[id] = Camera(f, k1, k2, k3, k4, p1, p2, cx, cy, w, h,
+        intrinsics[id] = Camera(f, k1, k2, k3, k4, p1, p2, p3, p4, b1, b2, cx, cy, w, h,
                                 pixel_width, pixel_height, focal_length)
 
     # parse chunk transform
@@ -212,16 +224,11 @@ def parse_agisoft_xml(path):
         # get the inverted camera matrix
         Rt = view.find('transform').text
         Rt = np.float32(Rt.split()).reshape((4, 4))
-        # remove chunk transform
+        # undo chunk transform
         Rt = chunk_transform @ Rt
 
         label = view.attrib['label']
         views[label] = View(label, Rt, intrinsics[np.int32(view.attrib['sensor_id'])])
 
     return views
-
-
-def export_agisoft_xml(path):
-    # TODO
-    pass
 
