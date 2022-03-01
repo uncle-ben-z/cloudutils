@@ -4,8 +4,9 @@ import open3d as o3d
 
 from pyntcloud import PyntCloud
 
+subclouds = []
 
-def store_subcloud(node, node_info, scene, cloud, path, count):
+def store_subcloud(node, node_info, cloud, path, count):
     early_stop = False
 
     if isinstance(node, o3d.geometry.OctreeInternalNode) and isinstance(node,
@@ -14,30 +15,34 @@ def store_subcloud(node, node_info, scene, cloud, path, count):
             or isinstance(node, o3d.geometry.OctreeLeafNode) and isinstance(node,
                                                                             o3d.geometry.OctreePointColorLeafNode):
         subcloud = cloud.select_by_index(node.indices)
+        subcloudname = os.path.join(f"subcloud_{node_info.depth}_{node_info.child_index}_{len(node.indices)}.ply")
+
+        global subclouds
+        subclouds.append(subcloudname)
+
         o3d.io.write_point_cloud(
-            os.path.join(path, f"subcloud_{node_info.depth}_{node_info.child_index}_{len(node.indices)}.ply"), subcloud)
+            os.path.join(path, subcloudname), subcloud)
         early_stop = True
 
-        scene.parse_agisoft_xml(os.path.join(path, "cameras.xml"))
-        scene.filter_cameras(os.path.join(path, "12_octree",
-                                          f"subcloud_{node_info.depth}_{node_info.child_index}_{len(node.indices)}.ply"),
-                             os.path.join(path, "12_octree",
-                                          f"subcloud_{node_info.depth}_{node_info.child_index}_{len(node.indices)}.xml"))
     return early_stop
 
 
-def create_octree(scene, folder_path, foldername, cloudname):
+def create_octree(folder_path, foldername, cloudname, count=100000):
     cloud = o3d.io.read_point_cloud(os.path.join(folder_path, foldername, cloudname))
 
     # estimate required depth
-    count = 100000
     depth = int(math.log(len(cloud.points) / count) / math.log(8)) + 2
+
+    global subclouds
+    subclouds = []
 
     # create octree
     octree = o3d.geometry.Octree(max_depth=depth)
     octree.convert_from_point_cloud(cloud, size_expand=0.00)
     octree.traverse(
-        lambda node, node_info: store_subcloud(node, node_info, scene, folder_path, foldername, cloudname, count))
+        lambda node, node_info: store_subcloud(node, node_info, cloud,
+                                               os.path.join(folder_path, foldername, "12_octree"), count))
+    return subclouds
 
 
 def colorize_subcloud(scene, folder_path, foldername, subcloud_name):
