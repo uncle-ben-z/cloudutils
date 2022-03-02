@@ -11,7 +11,11 @@ def load_agisoft_markers(path):
 
     markers = {}
     for marker in root.iter('marker'):
+        if 'marker_id' in marker.attrib.keys():
+            continue
+        print(marker.attrib['label'])
         idd = np.int32(marker.attrib['id'])
+        print(idd)
         label = marker.attrib['label']
         ref = marker.find('reference')
         enabled = True if ref.attrib['enabled'] is None else False
@@ -87,8 +91,7 @@ def global_registration(source_markers, target_markers):
 
     # target cloud
     target_cloud = o3d.geometry.PointCloud()
-    tmp_cloud = list(target_markers.keys())[:5]
-    xyz = np.array([list(target_markers[key]) for key in tmp_cloud])
+    xyz = np.array([list(target_markers[key]) for key in target_markers.keys()])
     target_cloud.points = o3d.utility.Vector3dVector(xyz)
 
     # Global registration: RANSAC
