@@ -1,5 +1,7 @@
+import os
 import numpy as np
 import open3d as o3d
+from pyntcloud import PyntCloud
 import xml.etree.ElementTree as ET
 
 
@@ -19,7 +21,7 @@ def load_agisoft_markers(path):
     return markers
 
 
-def save_agisoft_markers(markers, path):
+def export_agisoft_markers(markers, path):
     """ Save marker to agisoft xml file. """
     doc = ET.Element("document")
     doc.tail = "\n"
@@ -47,6 +49,33 @@ def save_agisoft_markers(markers, path):
 
     with open(path, 'w') as f:
         f.write(xml)
+
+
+def extract_markers(ply_path):
+    cloud = PyntCloud.from_file(ply_path)
+
+    defect = np.array(cloud.points["defect"])
+    cluster = np.array(cloud.points["cluster"])
+
+    if hasattr(cloud.points, 'normal_x'):
+        cloud.points["nx"] = cloud.points["normal_x"]
+        cloud.points["ny"] = cloud.points["normal_y"]
+        cloud.points["nz"] = cloud.points["normal_z"]
+
+    cloud = cloud.to_instance("open3d", mesh=False, normals=True)
+    cloud.paint_uniform_color([1.0, 0.0, 1.0])
+
+    # only keep control points
+    clusters = np.unique(cluster[defect == 1], return_counts=True)
+
+    # loop over control points
+    markers = {}
+    for c in clusters[0]:
+        idxs = np.nonzero(cluster == c)[0]
+        subcloud = cloud.select_by_index(idxs)
+        markers[c] = subcloud.get_center()
+
+    return markers
 
 
 def global_registration(source_markers, target_markers):
