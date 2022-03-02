@@ -3,6 +3,7 @@ import Metashape
 import numpy as np
 from scipy import ndimage
 
+
 def render_depths(path, xml_path, ply_path):
     """ Uses agisoft to render the absolute depth to the dense point cloud. """
     doc = Metashape.Document()
@@ -48,8 +49,8 @@ def render_depths(path, xml_path, ply_path):
 
 
 def render_views(model_path, cameras_path, out_path, is_cloud=False):
-    from projection import parse_agisoft_xml
     """ Uses agisoft to render views. """
+    from projection import parse_agisoft_xml
     doc = Metashape.Document()
     chunk = doc.addChunk()
 
@@ -68,7 +69,7 @@ def render_views(model_path, cameras_path, out_path, is_cloud=False):
         calibration.cx = views[label].camera.cx
         calibration.cy = views[label].camera.cy
         calibration.f = views[label].camera.f
-        calibration.height = views[label].camera.h // 2
+        calibration.height = views[label].camera.h
         calibration.k1 = views[label].camera.k1
         calibration.k2 = views[label].camera.k2
         calibration.k3 = views[label].camera.k3
@@ -77,7 +78,7 @@ def render_views(model_path, cameras_path, out_path, is_cloud=False):
         calibration.p2 = views[label].camera.p2
         calibration.p3 = views[label].camera.p3
         calibration.p4 = views[label].camera.p4
-        calibration.width = views[label].camera.w // 2
+        calibration.width = views[label].camera.w
 
         # undo chunk transform
         camera_transform = chunk.transform.matrix.inv() * Metashape.Matrix(views[label].Rt)
@@ -88,3 +89,14 @@ def render_views(model_path, cameras_path, out_path, is_cloud=False):
         else:
             img = chunk.model.renderImage(camera_transform, calibration, add_alpha=False)
         img.save(os.path.join(out_path, label + ".png"))
+
+
+def randomize_view(Rt):
+    # translation horizontal
+
+    # translation vertical
+
+    # translation distance
+
+    # rotation
+    pass
