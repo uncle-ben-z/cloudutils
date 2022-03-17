@@ -56,6 +56,7 @@ def export_agisoft_markers(markers, path):
 
 
 def extract_markers(ply_path):
+    """ Extract markers from point cloud. """
     cloud = PyntCloud.from_file(ply_path)
 
     defect = np.array(cloud.points["defect"])
@@ -83,7 +84,7 @@ def extract_markers(ply_path):
 
 
 def global_registration(source_markers, target_markers):
-    """ Finds a transform between source and target using RANSAC. """
+    """ Finds a transform between source and target point cloud using RANSAC. """
     # source cloud
     source_cloud = o3d.geometry.PointCloud()
     xyz = np.array([list(source_markers[key]) for key in source_markers.keys()])
@@ -136,4 +137,21 @@ def global_registration(source_markers, target_markers):
     print("transform: ")
     print(np.array2string(transform, suppress_small=True))
 
+    return transform, corres
+
+
+def refine_markers(source_markers):
+    # TODO
+    pass
+
+
+def bundle_adjustment():
+    # TODO
+    pass
+
+
+def helmert_transform(source_markers, target_markers, corres):
+    """ Compute the helmert transformation (similarity transformation, 2 1/3 point algorithm). """
+    # TODO
+    transform = None
     return transform
