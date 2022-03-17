@@ -3,6 +3,9 @@ import laspy
 import numpy as np
 import open3d as o3d
 from matplotlib import pyplot as plt
+from pytorch3d.structures import Pointclouds
+from pytorch3d.io import load_objs_as_meshes, IO
+from pytorch3d.ops import sample_points_from_meshes
 
 
 def compute_sharpness(img, thresh=3):
@@ -38,9 +41,17 @@ def ply2las(cloud, filepath):
     return
 
 
-def mesh2cloud(source_path, target_path, count=1000000):
-    """ Samples a point cloud from a mesh. """
+def mesh2cloud_color_from_vertices(source_path, target_path, count=1000000):
+    """ Samples a point cloud from a mesh inferring colors from vertex color (not texture). """
+    # Note: sample_points_uniformly unfortunately uses the vertex colors, rather than the colors from the texture.
     mesh = o3d.io.read_triangle_mesh(source_path)
     cloud = mesh.sample_points_uniformly(count, True)
     o3d.io.write_point_cloud(target_path, cloud)
 
+
+def mesh2cloud(source_path, target_path, count=1000000):
+    """ Samples a point cloud from a mesh. """
+    meshes = load_objs_as_meshes([source_path], load_textures=True, create_texture_atlas=True)
+    points = sample_points_from_meshes(meshes, num_samples=count, return_normals=True, return_textures=True)
+    clouds = Pointclouds(points=points[0], normals=points[1], features=points[2])
+    IO().save_pointcloud(clouds, target_path)
