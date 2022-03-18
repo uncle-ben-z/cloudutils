@@ -1,5 +1,7 @@
+import os
 import numpy as np
 import open3d as o3d
+from markers import extract_markers, export_agisoft_markers, load_agisoft_markers
 
 
 def global_registration(source_markers, target_markers):
@@ -133,3 +135,13 @@ def estimate_homography3d(X1, X2):
     homography /= homography[-1, -1]
 
     return homography
+
+
+def compute_geotransform(folder_path, foldername, cloudname):
+    """ Extract detected markers from point cloud and georeference the model. """
+    source_markers = extract_markers(os.path.join(folder_path, foldername, cloudname.replace(".ply", "_clustered.ply")))
+    export_agisoft_markers(source_markers, os.path.join(folder_path, foldername, "source_markers"))
+    target_markers = load_agisoft_markers(os.path.join(folder_path, foldername, "target_markers"))
+    _, corres = global_registration(source_markers, target_markers)
+    transform = estimate_transformation(source_markers, target_markers, corres)
+    return transform
