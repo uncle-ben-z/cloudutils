@@ -133,6 +133,8 @@ def global_registration(source_markers, target_markers):
     transform = o3d.pipelines.registration.TransformationEstimationPointToPoint(True).compute_transformation(
         source_cloud, target_cloud, corres_op3d)
 
+    # remap correspondences
+    corres = np.array([[list(source_markers.keys())[elem[0]], list(target_markers.keys())[elem[1]]] for elem in corres])
     print("corres: ", corres)
     print("transform: ")
     print(np.array2string(transform, suppress_small=True))
@@ -150,8 +152,58 @@ def bundle_adjustment():
     pass
 
 
+def condition_matrix3d(X):
+    """ Conditions a homogeneous matrix for numerical stability. """
+    t = np.mean(X, axis=1)
+    s = np.mean(np.abs(X.T - t), axis=0)
+    T = np.array([
+        [1 / s[0], 0, 0, -t[0] / s[0]],
+        [0, 1 / s[1], 0, -t[1] / s[1]],
+        [0, 0, 1 / s[2], -t[2] / s[2]],
+        [0, 0, 0, 1],
+    ])
+    N = T @ X
+    return T, N
+
+
+def homogenize(X):
+    """ Converts the columns of a matrix into homogeneous representation. """
+    return np.append(X, np.ones((1, X.shape[1])), axis=0)
+
+
 def helmert_transform(source_markers, target_markers, corres):
     """ Compute the helmert transformation (similarity transformation, 2 1/3 point algorithm). """
-    # TODO
     transform = None
     return transform
+
+
+def estimate_homography3d(X1, X2):
+    """ Implementation of the 5-Point algorithm. """
+    X1 = homogenize(X1)
+    X2 = homogenize(X2)
+
+    # conditioning
+    T1, N1 = condition_matrix3d(X1)
+    T2, N2 = condition_matrix3d(X2)
+
+    # design matrix
+    A = np.empty((0, 16))
+    for i in range(N1.shape[1]):
+        A = np.append(A, np.array([
+            [-N2[3, i] * N1[0, i], -N2[3, i] * N1[1, i], -N2[3, i] * N1[2, i], -N2[3, i] * N1[3, i], 0, 0, 0, 0,
+             0, 0, 0, 0, N2[0, i] * N1[0, i], N2[0, i] * N1[1, i], N2[0, i] * N1[2, i], N2[0, i] * N1[3, i]],
+            [0, 0, 0, 0, -N2[3, i] * N1[0, i], -N2[3, i] * N1[1, i], -N2[3, i] * N1[2, i], -N2[3, i] * N1[3, i],
+             0, 0, 0, 0, N2[1, i] * N1[0, i], N2[1, i] * N1[1, i], N2[1, i] * N1[2, i], N2[1, i] * N1[3, i]],
+            [0, 0, 0, 0, 0, 0, 0, 0, -N2[3, i] * N1[0, i], -N2[3, i] * N1[1, i], -N2[3, i] * N1[2, i],
+             -N2[3, i] * N1[3, i], N2[2, i] * N1[0, i], N2[2, i] * N1[1, i], N2[2, i] * N1[2, i], N2[2, i] * N1[3, i]],
+        ]), axis=0)
+
+    # singular value decomposition
+    U, D, V = np.linalg.svd(A)
+
+    # prepare solution, unconditioning
+    h_tmp = V[-1, :].reshape(4, 4)
+    homography = np.linalg.inv(T2) @ h_tmp @ T1
+    homography /= homography[-1, -1]
+
+    return homography
