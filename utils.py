@@ -2,7 +2,6 @@ import cv2
 import laspy
 import numpy as np
 import open3d as o3d
-from matplotlib import pyplot as plt
 from pytorch3d.structures import Pointclouds
 from pytorch3d.io import load_objs_as_meshes, IO
 from pytorch3d.ops import sample_points_from_meshes
@@ -55,3 +54,7 @@ def mesh2cloud(source_path, target_path, count=1000000):
     points = sample_points_from_meshes(meshes, num_samples=count, return_normals=True, return_textures=True)
     clouds = Pointclouds(points=points[0], normals=points[1], features=points[2])
     IO().save_pointcloud(clouds, target_path)
+
+def apply_transfrom(cloud_path):
+    # TODO: likely with pyncloud
+    pass
