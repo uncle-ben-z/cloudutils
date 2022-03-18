@@ -134,7 +134,7 @@ def global_registration(source_markers, target_markers):
         source_cloud, target_cloud, corres_op3d)
 
     # remap correspondences
-    corres = np.array([[list(source_markers.keys())[elem[0]], list(target_markers.keys())[elem[1]]] for elem in corres])
+    # corres = np.array([[list(source_markers.keys())[elem[0]], list(target_markers.keys())[elem[1]]] for elem in corres])
     print("corres: ", corres)
     print("transform: ")
     print(np.array2string(transform, suppress_small=True))
@@ -152,6 +152,11 @@ def bundle_adjustment():
     pass
 
 
+def homogenize(X):
+    """ Converts the columns of a matrix into homogeneous representation. """
+    return np.append(X, np.ones((1, X.shape[1])), axis=0)
+
+
 def condition_matrix3d(X):
     """ Conditions a homogeneous matrix for numerical stability. """
     t = np.mean(X, axis=1)
@@ -166,14 +171,21 @@ def condition_matrix3d(X):
     return T, N
 
 
-def homogenize(X):
-    """ Converts the columns of a matrix into homogeneous representation. """
-    return np.append(X, np.ones((1, X.shape[1])), axis=0)
+def estimate_transformation(source_markers, target_markers, corres):
+    """ Compute (similarity) transformation. """
+    # source cloud
+    source_cloud = o3d.geometry.PointCloud()
+    xyz = np.array([list(source_markers[key]) for key in source_markers.keys()])
+    source_cloud.points = o3d.utility.Vector3dVector(xyz)
 
+    # target cloud
+    target_cloud = o3d.geometry.PointCloud()
+    xyz = np.array([list(target_markers[key]) for key in target_markers.keys()])
+    target_cloud.points = o3d.utility.Vector3dVector(xyz)
 
-def helmert_transform(source_markers, target_markers, corres):
-    """ Compute the helmert transformation (similarity transformation, 2 1/3 point algorithm). """
-    transform = None
+    transform = o3d.pipelines.registration.TransformationEstimationPointToPoint(True).compute_transformation(
+        source_cloud, target_cloud, o3d.utility.Vector2iVector(corres))
+
     return transform
 
 
