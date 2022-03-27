@@ -1,4 +1,5 @@
 import os
+import cv2
 import numpy as np
 import open3d as o3d
 from pyntcloud import PyntCloud
@@ -82,7 +83,69 @@ def extract_markers(ply_path):
 
     return markers
 
-def refine_markers(source_markers):
-    # TODO
-    pass
 
+def compute_linepoints(line, shape):
+    """ Computes the intersection points of a homogeneous line with the frame of an image."""
+    pleft = np.cross(line, [1, 0, 0])
+    pleft /= pleft[-1]
+    ptop = np.cross(line, [0, 1, 0])
+    ptop /= ptop[-1]
+    pright = np.cross(line, [1, 0, -shape[1]])
+    pright /= pright[-1]
+    pbottom = np.cross(line, [0, 1, -shape[0]])
+    pbottom /= pbottom[-1]
+
+    pts = np.empty((0, 3))
+    if not np.any((pleft < 0) + (shape[1] < pleft)):
+        pts = np.append(pts, pleft.reshape(1, 3), axis=0)
+    if not np.any((ptop < 0) + (shape[0] < ptop)):
+        pts = np.append(pts, ptop.reshape(1, 3), axis=0)
+    if not np.any((pright < 0) + (shape[1] < pright)):
+        pts = np.append(pts, pright.reshape(1, 3), axis=0)
+    if not np.any((pbottom < 0) + (shape[0] < pbottom)):
+        pts = np.append(pts, pbottom.reshape(1, 3), axis=0)
+
+    return pts[:, :2]
+
+
+def refine_markers(patch, offset):
+    """ Adjusts the center of a control point based on the intersection of Hough lines in the image. """
+    # hough transform
+    edges = cv2.Canny(patch, 150, 200, apertureSize=3)
+    # plt.imshow(patch)
+    # plt.show()
+    lines = cv2.HoughLines(edges, 1, np.pi / 180, 2)
+
+    # get first line
+    rho1, theta1 = lines[0][0]
+    rho1 += np.cos(theta1) * offset[0] + np.sin(theta1) * offset[1]
+    line1 = np.array(
+        [np.cos(theta1), np.sin(theta1), -rho1])
+    line1 /= line1[-1]
+
+    # get second line
+    for l in lines[1:, ...]:
+        rho, theta = l[0]
+        rho += np.cos(theta) * offset[0] + np.sin(theta) * offset[1]
+        # apply angular deviation constraint
+        dev = np.degrees(abs(theta1 - theta) % np.pi)
+        if dev < 45:
+            continue
+
+        # compute intersection
+        line2 = np.array([np.cos(theta), np.sin(theta), -rho])
+        inter = np.cross(line1, line2)
+        inter /= inter[-1]
+        break
+
+    return inter[:2], line1, line2
+
+
+def refine_markers_harris(patch, offset):
+    """ Heuristically uses the max Harris response for control point center. """
+    harris = cv2.cornerHarris(patch, 2, 5, 0.07)
+    edges = np.where(harris < 0, np.abs(harris), 0)
+
+    point = np.array(np.where(harris == harris.max())).flatten()
+    point += offset
+    return np.float64(point)

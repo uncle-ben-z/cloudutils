@@ -44,6 +44,8 @@ def defect2graph(ply_path, graph_path, eps=0.005):
             # get modal (= most plausible) class
             counts = np.bincount(defect[idxs], minlength=7)
 
+            # classes: background, control point, vegetation, efflorescence, corrosion, spalling, crack, exposed rebars
+
             # determine classes
             if c == 1 and counts[4] > 0 and counts[5] > 0:
                 mode_class = 7  # exposed rebar
@@ -99,7 +101,7 @@ def defect2graph(ply_path, graph_path, eps=0.005):
                 GG = uniquify_graph_nodes(G)
                 G_complete = nx.compose(G_complete, GG)
 
-            # non-crack case
+            # case: corrosion, spalling, exposed rebar
             elif mode_class != 6 and np.max(box_extend) > 0.01 and mode_class >= 4:
                 # reconstruct surface
                 mesh, densities = o3d.geometry.TriangleMesh.create_from_point_cloud_poisson(subcloud, depth=9)
@@ -186,6 +188,23 @@ def defect2graph(ply_path, graph_path, eps=0.005):
                     G = simplify_graph(G)
                     G = uniquify_graph_nodes(G)
                     G_complete = nx.compose(G_complete, G)
+
+            # case: control point
+            elif mode_class == 1:
+                idxs = np.nonzero(cluster == lab)[0]
+
+                # select cloud of current cluster
+                subcloud = cloud.select_by_index(idxs)
+                center = subcloud.get_center()
+                subcloud.points.append(center)
+                subcloud.estimate_normals()
+
+                G = nx.Graph()
+                G.add_node("_".join(center.astype(str)), pos=subcloud.points[-1], normal=subcloud.normals[-1],
+                            category=mode_class)
+
+                #o3d.visualization.draw_geometries([subcloud])
+                G_complete = nx.compose(G_complete, G)
 
     nx.write_gpickle(G_complete, graph_path)
     return
