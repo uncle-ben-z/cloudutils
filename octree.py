@@ -46,6 +46,9 @@ def create_octree(folder_path, foldername, cloudname, count=100000):
 
 
 def colorize_subcloud(scene, folder_path, foldername, subcloud_name):
+    output_name = os.path.join(folder_path, foldername, "12_octree", subcloud_name + "_colorized.ply")
+    if os.path.exists(output_name):
+        return
     scene.parse_agisoft_xml(
         os.path.join(folder_path, foldername, subcloud_name + ".xml"))
     scene.cache_images(
@@ -64,7 +67,7 @@ def colorize_subcloud(scene, folder_path, foldername, subcloud_name):
     )
     scene.colorize_point_cloud(
         os.path.join(folder_path, foldername, "12_octree", subcloud_name + ".ply"),
-        os.path.join(folder_path, foldername, "12_octree", subcloud_name + "_colorized.ply")
+        output_name
     )
 
 
