@@ -1,6 +1,7 @@
 import os
 import math
 import open3d as o3d
+import pandas as pd
 
 from pyntcloud import PyntCloud
 
@@ -80,6 +81,6 @@ def recombine_subclouds(source_path, target_path):
         if i == 0:
             cloud = subcloud
         else:
-            cloud.points = cloud.points.append(subcloud.points)
+            cloud.points = cloud.points = pd.concat(cloud.points, subcloud.points)
 
     cloud.to_file(target_path)
