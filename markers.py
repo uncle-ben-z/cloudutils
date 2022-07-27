@@ -1,10 +1,13 @@
 import os
 import cv2
+import json
 import numpy as np
 import open3d as o3d
 from pyntcloud import PyntCloud
 import xml.etree.ElementTree as ET
-
+import matplotlib
+matplotlib.use("TkAgg")
+from matplotlib import pyplot as plt
 
 def load_agisoft_markers(path):
     """ Loads all markers from agisoft xml. """
@@ -26,7 +29,7 @@ def load_agisoft_markers(path):
     return markers
 
 
-def export_agisoft_markers(markers, path):
+def export_agisoft_markers(markers, path, frames=None):
     """ Save marker to agisoft xml file. """
     doc = ET.Element("document")
     doc.tail = "\n"
@@ -48,6 +51,34 @@ def export_agisoft_markers(markers, path):
         ref.attrib['x'] = f"{markers[key][0]:f}"
         ref.attrib['y'] = f"{markers[key][1]:f}"
         ref.attrib['z'] = f"{markers[key][2]:f}"
+
+    if frames:
+        frms = ET.SubElement(chunk, "frames")
+        frms.attrib['next_id'] = "1"
+        frms.tail = "\n"
+        frms.text = "\n"
+        frm = ET.SubElement(frms, "frame")
+        frm.attrib['id'] = "0"
+        frm.tail = "\n"
+        frm.text = "\n"
+        mrks = ET.SubElement(frm, "markers")
+        mrks.tail = "\n"
+        mrks.text = "\n"
+        for mkey in frames.keys():
+            mrk = ET.SubElement(mrks, "marker")
+            mrk.attrib['marker_id'] = str(mkey)
+            mrk.tail = "\n"
+            mrk.text = "\n"
+            for lkey in frames[mkey].keys():
+                loc = ET.SubElement(mrk, "location")
+                loc.tail = "\n"
+                loc.text = "\n"
+                loc.attrib["camera_id"] = lkey
+                loc.attrib["pinned"] = "true"
+                loc.attrib["x"] = str(frames[mkey][lkey][0])
+                loc.attrib["y"] = str(frames[mkey][lkey][1])
+
+
 
     xml = ET.tostring(doc, encoding='utf8', method='xml').decode("utf-8")
     print(xml)
@@ -83,6 +114,24 @@ def extract_markers(ply_path):
 
     return markers
 
+def sdiff2agisoft(sdiff_path, xml_path):
+    """ Extracts the control point information from SDIFF file and converts it into the agisoft format."""
+    with open(sdiff_path, 'r') as f:
+        sdiff = json.load(f)
+
+    markers = {}
+    frames = {}
+
+    for i, feat in enumerate(sdiff["features"]):
+        if feat["category"] == "control_point":
+            markers[i] = feat["reconstruction"]["centroid"]["coordinates"]
+            #if i not in frames.keys():
+            frames[i] = {}
+            for view in feat["views"].keys():
+                frames[i][view] = feat["views"][view]
+
+    export_agisoft_markers(markers, xml_path, frames)
+
 
 def compute_linepoints(line, shape):
     """ Computes the intersection points of a homogeneous line with the frame of an image."""
@@ -111,10 +160,31 @@ def compute_linepoints(line, shape):
 def refine_markers(patch, offset):
     """ Adjusts the center of a control point based on the intersection of Hough lines in the image. """
     # hough transform
-    edges = cv2.Canny(patch, 150, 200, apertureSize=3)
-    # plt.imshow(patch)
-    # plt.show()
+    harris = cv2.cornerHarris(patch, 2, 5, 0.07)
+    #harris += abs(np.min(harris))
+    #harris /= np.max(harris)
+    #harris = np.uint8(harris*255)
+    #edges = cv2.Canny(harris, 50, 200, None, 3)
+    harris[harris > 0] = 0
+    harris = np.abs(harris)
+    harris /= np.max(harris)
+    #harris /= np.min(harris)
+    edges = np.uint8(np.where(harris > 0.2, 1, 0))
+    if False:
+        plt.subplot(221)
+        plt.imshow(patch)
+        plt.subplot(222)
+        plt.imshow(harris)
+        plt.subplot(223)
+        plt.imshow(edges)
+        plt.show()
     lines = cv2.HoughLines(edges, 1, np.pi / 180, 2)
+
+    if lines is None:
+        return None, None, None
+
+    # initialize
+    inter, line1, line2 = np.zeros((0,2)), None, None
 
     # get first line
     rho1, theta1 = lines[0][0]
