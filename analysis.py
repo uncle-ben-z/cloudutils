@@ -37,4 +37,10 @@ def cloud_density(cloud_path, mesh_path=None):
 
     return resolution
 
+def count_views():
+    # TODO
+    # best angle, distance, quality
+    # number of views ...
+    pass
+
 

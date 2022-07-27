@@ -39,8 +39,8 @@ class View:
     def viewing_deviation(self, normal):
         # TODO: test
         """ Computes the angular deviation between the world viewing direction and a normal. """
-        nominator = np.dot(normal, self.world_viewing_direction)
-        denominator = np.linalg.norm(normal) * np.linalg.norm(self.world_viewing_direction)
+        nominator = np.dot(normal, self.viewing_direction)
+        denominator = np.linalg.norm(normal) * np.linalg.norm(self.viewing_direction)
         return np.degrees(np.arccos(nominator / denominator))
 
     def _world2camera(self, p):
@@ -86,7 +86,7 @@ class Camera:
         self.focal_length = focal_length
 
     def __str__(self):
-        out = "\nf: \t" + str(self.f)
+        out = "\nf:  \t" + str(self.f)
         out += "\ncx: \t" + str(self.cx)
         out += "\ncy: \t" + str(self.cy)
         out += "\nk1: \t" + str(self.k1)
@@ -231,4 +231,9 @@ def parse_agisoft_xml(path):
         views[label] = View(label, Rt, intrinsics[np.int32(view.attrib['sensor_id'])])
 
     return views
+
+
+def export_agisoft_xml(path):
+    # TODO
+    pass
 

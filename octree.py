@@ -81,6 +81,6 @@ def recombine_subclouds(source_path, target_path):
         if i == 0:
             cloud = subcloud
         else:
-            cloud.points = cloud.points = pd.concat(cloud.points, subcloud.points)
+            cloud.points = pd.concat([cloud.points, subcloud.points])
 
     cloud.to_file(target_path)
