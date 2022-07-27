@@ -195,7 +195,7 @@ def defect2graph(ply_path, graph_path, eps=0.005):
                     G_complete = nx.compose(G_complete, G)
 
             # case: control point
-            elif mode_class == 1:
+            elif False and mode_class == 1:
                 idxs = np.nonzero(cluster == lab)[0]
 
                 # select cloud of current cluster
