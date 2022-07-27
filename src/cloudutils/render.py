@@ -24,7 +24,6 @@ def render_depths(path, xml_path, ply_path):
     chunk.importPoints(ply_path)
 
     for j, camera in enumerate(chunk.cameras):
-        print(camera.label)
         if not camera.enabled or camera.transform is None:
             continue
 

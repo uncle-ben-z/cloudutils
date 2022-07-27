@@ -1,6 +1,7 @@
 import os
 import math
 import open3d as o3d
+import pandas as pd
 
 from pyntcloud import PyntCloud
 
@@ -46,6 +47,9 @@ def create_octree(folder_path, foldername, cloudname, count=100000):
 
 
 def colorize_subcloud(scene, folder_path, foldername, subcloud_name):
+    output_name = os.path.join(folder_path, foldername, "12_octree", subcloud_name + "_colorized.ply")
+    if os.path.exists(output_name):
+        return
     scene.parse_agisoft_xml(
         os.path.join(folder_path, foldername, subcloud_name + ".xml"))
     scene.cache_images(
@@ -64,7 +68,7 @@ def colorize_subcloud(scene, folder_path, foldername, subcloud_name):
     )
     scene.colorize_point_cloud(
         os.path.join(folder_path, foldername, "12_octree", subcloud_name + ".ply"),
-        os.path.join(folder_path, foldername, "12_octree", subcloud_name + "_colorized.ply")
+        output_name
     )
 
 
@@ -77,6 +81,6 @@ def recombine_subclouds(source_path, target_path):
         if i == 0:
             cloud = subcloud
         else:
-            cloud.points = cloud.points.append(subcloud.points)
+            cloud.points = cloud.points = pd.concat(cloud.points, subcloud.points)
 
     cloud.to_file(target_path)
