@@ -1,10 +1,15 @@
+import alphashape
 import numpy as np
 import open3d as o3d
 import networkx as nx
 from tqdm import tqdm
 from pyntcloud import PyntCloud
 from scipy.spatial import distance
+import matplotlib
+
+matplotlib.use("TkAgg")
 from matplotlib import pyplot as plt
+from sklearn.decomposition import PCA
 
 try:
     from graphutils import remove_duplicates, crack2graph, noncrack2graph, simplify_graph, uniquify_graph_nodes
@@ -17,7 +22,7 @@ def defect2graph(ply_path, graph_path, eps=0.005):
     cloud = PyntCloud.from_file(ply_path)
 
     defect = np.array(cloud.points["defect"])
-    orgi_cluster = np.array(cloud.points["cluster"])
+    orig_cluster = np.array(cloud.points["cluster"])
     meta_cluster = np.array(cloud.points["meta_cluster"])
 
     if hasattr(cloud.points, 'normal_x'):
@@ -30,7 +35,7 @@ def defect2graph(ply_path, graph_path, eps=0.005):
 
     G_complete = nx.Graph()
 
-    for c, cluster in enumerate([orgi_cluster, meta_cluster]):
+    for c, cluster in enumerate([orig_cluster, meta_cluster]):
 
         uni, count = np.unique(cluster, return_counts=True)
 
@@ -190,7 +195,7 @@ def defect2graph(ply_path, graph_path, eps=0.005):
                     G_complete = nx.compose(G_complete, G)
 
             # case: control point
-            elif mode_class == 1:
+            elif False and mode_class == 1:
                 idxs = np.nonzero(cluster == lab)[0]
 
                 # select cloud of current cluster
@@ -199,11 +204,25 @@ def defect2graph(ply_path, graph_path, eps=0.005):
                 subcloud.points.append(center)
                 subcloud.estimate_normals()
 
+                points = np.array(subcloud.points)
+                pca = PCA(n_components=2)
+                trans = pca.fit_transform(points)
+
+                # Determine the optimized alpha parameter
+                # alpha = alphashape.optimizealpha(points)
+                alpha_shape = alphashape.alphashape(trans, 2.0)
+                bound = np.array(alpha_shape.boundary.coords)
+                plt.plot(trans[:, 0], trans[:, 1], '.')
+                plt.plot(bound[:, 0], bound[:, 1], 'o')
+                plt.show()
+
+                print(center)
+
                 G = nx.Graph()
                 G.add_node("_".join(center.astype(str)), pos=subcloud.points[-1], normal=subcloud.normals[-1],
-                            category=mode_class)
+                           category=mode_class)
 
-                #o3d.visualization.draw_geometries([subcloud])
+                # o3d.visualization.draw_geometries([subcloud])
                 G_complete = nx.compose(G_complete, G)
 
     nx.write_gpickle(G_complete, graph_path)

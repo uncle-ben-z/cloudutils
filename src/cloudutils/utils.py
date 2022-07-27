@@ -3,11 +3,12 @@ import cv2
 import laspy
 import Metashape
 import numpy as np
+import pandas as pd
 import open3d as o3d
+from pyntcloud import PyntCloud
 from pytorch3d.structures import Pointclouds
 from pytorch3d.io import load_objs_as_meshes, IO
 from pytorch3d.ops import sample_points_from_meshes
-
 
 def compute_sharpness(img, thresh=3):
     """ Computes the local sharpness."""
@@ -57,6 +58,30 @@ def mesh2cloud(source_path, target_path, count=1000000):
     clouds = Pointclouds(points=points[0], normals=points[1], features=points[2])
     IO().save_pointcloud(clouds, target_path)
 
+def image2cloud(img, lab=None):
+    h, w, _ = img.shape
+
+    # x and y coordinates
+    x, y = np.arange(w) - w / 2, np.arange(h) - h / 2
+    xx, yy = np.meshgrid(x, y)
+
+    # map image to cloud
+    data = {}
+    data['x'] = xx.flatten()
+    data['y'] = yy.flatten()
+    data['z'] = np.zeros((h * w,))
+    data['nx'] = np.zeros((h * w,))
+    data['nx'] = np.zeros((h * w,))
+    data['nz'] = np.ones((h * w,))
+    data['red'] = img[..., 0].flatten()
+    data['green'] = img[..., 1].flatten()
+    data['blue'] = img[..., 2].flatten()
+    if lab is not None:
+        data['defect'] = lab.flatten()
+
+    points = pd.DataFrame(data)
+    ply = PyntCloud(points)
+    return ply
 
 def apply_transfrom(cloud_path):
     # TODO: likely with pyncloud
