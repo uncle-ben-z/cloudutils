@@ -1,5 +1,7 @@
+import os
 import cv2
 import laspy
+import Metashape
 import numpy as np
 import open3d as o3d
 from pytorch3d.structures import Pointclouds
@@ -55,6 +57,84 @@ def mesh2cloud(source_path, target_path, count=1000000):
     clouds = Pointclouds(points=points[0], normals=points[1], features=points[2])
     IO().save_pointcloud(clouds, target_path)
 
+
 def apply_transfrom(cloud_path):
     # TODO: likely with pyncloud
     pass
+
+
+def export_agisoft_model(chunk, path, name):
+    """ Export mesh from agisoft chunk. """
+    obj = "mtllib " + name + ".mtl\n"
+    obj += "usemtl " + name + "\n"
+
+    model = chunk.model
+    transformation = np.array(chunk.transform.matrix).reshape(4, 4)
+
+    for vertex in model.vertices:
+        # print(vertex.coord)
+        # TODO: apply chunk transform!
+        coord = np.array([vertex.coord[0], vertex.coord[1], vertex.coord[2], 1])
+        coord = transformation @ coord
+
+        obj += f"v {coord[0]} {coord[1]} {coord[2]} {vertex.color[0] / 255} {vertex.color[1] / 255} {vertex.color[2] / 255}\n"
+
+    for tex_vertex in model.tex_vertices:
+        obj += f"vt {tex_vertex.coord[0]} {tex_vertex.coord[1]}\n"
+
+    for face in model.faces:
+        obj += f"f {face.vertices[0] + 1}/{face.tex_vertices[0] + 1} {face.vertices[1] + 1}/{face.tex_vertices[1] + 1} {face.vertices[2] + 1}/{face.tex_vertices[2] + 1}\n"
+
+    with open(os.path.join(path, name + ".obj"), 'w') as f:
+        f.write(obj)
+
+    mtl = "newmtl Solid\n"
+    mtl += "Ka 1.0 1.0 1.0\n"
+    mtl += "Kd 1.0 1.0 1.0\n"
+    mtl += "Ks 0.0 0.0 0.0\n"
+    mtl += "d 1.0\n"
+    mtl += "Ns 0.0\n"
+    mtl += "illum 0\n"
+    mtl += "\n"
+    mtl += "newmtl " + name + "\n"
+    mtl += "Ka 1.0 1.0 1.0\n"
+    mtl += "Kd 1.0 1.0 1.0\n"
+    mtl += "Ks 0.0 0.0 0.0\n"
+    mtl += "d 1.0\n"
+    mtl += "Ns 0.0\n"
+    mtl += "illum 0\n"
+    mtl += "map_Kd " + name + ".jpg\n"
+
+    with open(os.path.join(path, name + ".mtl"), 'w') as f:
+        f.write(mtl)
+
+    for texture in model.textures:
+        h, w, c = texture.image().height, texture.image().width, texture.image().cn
+        img = np.fromstring(texture.image().tostring(), dtype=np.uint8)
+        img = img.reshape(h, w, c)
+
+        img = cv2.cvtColor(img, cv2.COLOR_RGBA2BGRA)
+        cv2.imwrite(os.path.join(path, name + ".jpg"), img)
+
+
+def cast_ray(coord, camera, chunk):
+    """ Use agisoft function for ray casting. """
+    pt2D = Metashape.Vector((int(coord[0]), int(coord[1])))
+    # sdiff 2D -> 3D
+    # camera origin in chunk world
+    center = camera.center
+    # pixel in 3D world coordinates
+    dot = camera.calibration.unproject(pt2D)
+    # transform point into chunk world
+    dot = camera.transform * Metashape.Vector((dot[0], dot[1], dot[2], 1.0))
+
+    # ray casting
+    intersect = chunk.model.pickPoint(center[:3], dot[:3])
+
+    if intersect is None:
+        return None
+
+    # transform intersect from chunk to world coordinates
+    coords = chunk.transform.matrix * Metashape.Vector((intersect[0], intersect[1], intersect[2], 1.0))
+    coords = [coords[0], coords[1], coords[2]]
+    return coords
